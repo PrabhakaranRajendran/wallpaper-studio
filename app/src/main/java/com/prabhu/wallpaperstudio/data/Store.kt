@@ -48,6 +48,7 @@ object Keys {
     const val ACTIVE_PHOTO_LOCK = "active_photo_lock"
     const val ACTIVE_VIDEO_HOME = "active_video_home"
     const val ACTIVE_VIDEO_LOCK = "active_video_lock"
+    const val ENGINE_LOG = "engine_log"       // last few things the wallpaper did
 }
 
 /** Per-photo crop. x / y are offsets as a fraction of the screen size. */
@@ -180,18 +181,27 @@ object Store {
     /** The folder a selected photo came from, if it is still in the list. */
     fun folderOf(photo: String, folders: List<String> = stringList(Keys.FOLDERS)): String? =
         folders.firstOrNull { photo.startsWith("$it/document/") }
+            ?: folders.firstOrNull { PhotoRepo.sameFolder(it, photo) }
 
     /** Selected photos for "home" or "lock", based on each folder's setting. */
     fun photosFor(target: String): List<String> {
         val selected = stringList(Keys.SELECTED)
         val folders = stringList(Keys.FOLDERS)
         val targets = folderTargets()
-        val out = selected.filter { uri ->
-            val f = folderOf(uri, folders)
-            val t = if (f == null) "both" else targets[f] ?: "both"
+        // Only photos from folders that are still added (others can't be opened).
+        val valid = selected.mapNotNull { uri -> folderOf(uri, folders)?.let { uri to it } }
+        val out = valid.filter { (_, f) ->
+            val t = targets[f] ?: "both"
             t == "both" || t == target
-        }
-        return out.ifEmpty { selected }
+        }.map { it.first }
+        return out.ifEmpty { valid.map { it.first } }
+    }
+
+    /** Adds a line to the wallpaper's activity log (shown in Settings > Wallpaper check). */
+    fun log(message: String) {
+        val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+        val lines = string(Keys.ENGINE_LOG, "").lines().filter { it.isNotBlank() } + "$time  $message"
+        edit { putString(Keys.ENGINE_LOG, lines.takeLast(6).joinToString("\n")) }
     }
 
     fun indexKey(target: String) = if (target == "lock") Keys.PHOTO_INDEX_LOCK else Keys.PHOTO_INDEX

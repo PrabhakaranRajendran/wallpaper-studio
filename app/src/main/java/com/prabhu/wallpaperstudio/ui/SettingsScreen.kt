@@ -119,6 +119,71 @@ private fun ThemeGrid() {
     }
 }
 
+/** Shows what the wallpaper is doing, to spot problems quickly. */
+@Composable
+private fun WallpaperCheck() {
+    val context = LocalContext.current
+    Store.tick.intValue
+    resumeTick()
+    val home = screenStatus(context, lock = false)
+    val lock = screenStatus(context, lock = true)
+    val now = System.currentTimeMillis()
+    val last = Store.long(Keys.LAST_CHANGE, 0L)
+    val interval = Store.intervalMin()
+    val nextMin = ((last + interval * 60_000L - now) / 60_000L).coerceAtLeast(0L)
+    fun kind(k: String?) = when (k) {
+        "photos" -> "Photos"
+        "video" -> "Video"
+        else -> "Not set"
+    }
+    val rows = listOf(
+        "Home screen" to kind(home) + if (home == "photos") " · ${Store.photosFor("home").size} photos" else "",
+        "Lock screen" to kind(lock) + if (lock == "photos") " · ${Store.photosFor("lock").size} photos" else "",
+        "Changes every" to intervalLabel(interval) + if (Store.paused()) " (paused)" else "",
+        "Last change" to if (last == 0L) "never" else "${(now - last) / 60_000L} min ago",
+        "Next change" to if (Store.paused()) "paused" else if (nextMin == 0L) "when you next see the screen" else "in about $nextMin min",
+        "Battery Saver" to if (com.prabhu.wallpaperstudio.wallpaper.Battery.saverOn(context)) "on" else "off",
+    )
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            rows.forEach { (label, value) ->
+                Row {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(value, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            val log = Store.string(Keys.ENGINE_LOG, "")
+            Text(
+                "Recent activity",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Text(
+                log.ifBlank { "Nothing yet. Set the photo wallpaper and lock/unlock once." },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                OutlinedButton(onClick = {
+                    Store.edit { putLong(Keys.CHANGE_NOW, System.currentTimeMillis()) }
+                }) { Text("Change now") }
+                TextButton(onClick = { Store.edit { putString(Keys.ENGINE_LOG, "") } }) { Text("Clear log") }
+            }
+        }
+    }
+}
+
 /** Adds a home-screen shortcut whose icon is the chosen picture. */
 private suspend fun makeShortcut(context: Context, uri: Uri) {
     val bmp = withContext(Dispatchers.IO) {
@@ -208,6 +273,9 @@ fun SettingsScreen() {
                 }
             }
         }
+
+        SectionLabel("Wallpaper check")
+        WallpaperCheck()
 
         SectionLabel("Theme")
         ThemeGrid()

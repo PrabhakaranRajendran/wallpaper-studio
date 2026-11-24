@@ -260,6 +260,8 @@ class PhotoWallpaperService : WallpaperService() {
 
         private fun advance() {
             val now = System.currentTimeMillis()
+            // Two wallpaper copies (home + lock) may both ask at once: change only once.
+            if (now - Store.long(Keys.LAST_CHANGE, 0L) < 1_500L) return
             val shuffle = Store.order() == "shuffle"
             Store.edit {
                 for (t in listOf("home", "lock")) {
@@ -342,6 +344,7 @@ class PhotoWallpaperService : WallpaperService() {
             val longSide = (max(sw, sh) * 1.25f).toInt()
             val crop = Store.crops()[uri]
             loader.execute {
+                var reason: String? = null
                 val slide = try {
                     val bmp = PhotoMath.decode(this@PhotoWallpaperService, uri, longSide)
                     val blur = Bitmap.createScaledBitmap(
@@ -349,22 +352,34 @@ class PhotoWallpaperService : WallpaperService() {
                     )
                     Slide(uri, bmp, blur, crop, PhotoMath.brightnessFilter(crop?.brightness ?: 0f))
                 } catch (t: Throwable) {
+                    reason = if (t is SecurityException) "no permission" else (t.message ?: t.javaClass.simpleName)
                     null
                 }
-                handler.post { onLoaded(gen, uri, slide) }
+                handler.post { onLoaded(gen, uri, slide, reason) }
             }
         }
 
-        private fun onLoaded(gen: Int, uri: String, slide: Slide?) {
+        private fun onLoaded(gen: Int, uri: String, slide: Slide?, reason: String? = null) {
             if (gen != loadGeneration) return
             loadingUri = null
+            val t = target()
+            val list = Store.photosFor(t)
             if (slide == null) {
-                // Photo deleted or access lost: move on to the next one.
+                // Photo deleted or access lost: skip it (without waiting for the timer).
                 failedInARow++
-                if (!isPreview && failedInARow < 5) advance()
+                if (!isPreview) {
+                    Store.log("Couldn't open a $t photo ($reason), skipped")
+                    if (failedInARow < list.size) {
+                        Store.edit { putInt(Store.indexKey(t), Store.int(Store.indexKey(t), 0) + 1) }
+                    }
+                }
                 return
             }
             failedInARow = 0
+            if (!isPreview && current?.uri != uri) {
+                val i = list.indexOf(uri)
+                Store.log("$t: showing photo ${i + 1} of ${list.size}")
+            }
             val old = current
             val animate = old != null && old.uri != uri && transition != "none" && visible
             previous = if (animate) old else null

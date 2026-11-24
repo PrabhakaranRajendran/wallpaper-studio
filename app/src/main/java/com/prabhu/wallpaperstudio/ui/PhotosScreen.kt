@@ -660,7 +660,9 @@ private fun targetLabel(t: String) = when (t) {
 }
 
 private fun removeFolder(context: android.content.Context, folder: String) {
-    val folders = Store.stringList(Keys.FOLDERS) - folder
+    val all = Store.stringList(Keys.FOLDERS)
+    Store.putStringList(Keys.SELECTED, Store.stringList(Keys.SELECTED).filter { Store.folderOf(it, all) != folder })
+    val folders = all - folder
     Store.putStringList(Keys.FOLDERS, folders)
     Store.edit { putString(Keys.CURRENT_FOLDER, folders.firstOrNull()) }
     try {
