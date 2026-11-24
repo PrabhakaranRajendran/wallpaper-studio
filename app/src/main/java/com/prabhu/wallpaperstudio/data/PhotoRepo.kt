@@ -43,19 +43,35 @@ object PhotoRepo {
         return out.sortedByDescending { it.modified }
     }
 
+    data class CopyResult(val added: List<String>, val error: String?)
+
+    /** Same folder, even if its address is written slightly differently. */
+    fun sameFolder(a: String, b: String): Boolean {
+        if (a == b) return true
+        return try {
+            val ua = Uri.parse(a)
+            val ub = Uri.parse(b)
+            ua.authority == ub.authority &&
+                DocumentsContract.getTreeDocumentId(ua) == DocumentsContract.getTreeDocumentId(ub)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** True when the app may create files in this folder. */
     fun canWrite(context: Context, folder: String): Boolean =
-        context.contentResolver.persistedUriPermissions.any { it.uri.toString() == folder && it.isWritePermission }
+        context.contentResolver.persistedUriPermissions.any { it.isWritePermission && sameFolder(it.uri.toString(), folder) }
 
     /**
      * Copies photos picked from Gallery / Google Photos into the folder.
      * Returns the new photos' URIs.
      */
-    fun copyInto(context: Context, folder: String, sources: List<Uri>, onProgress: (Int) -> Unit): List<String> {
+    fun copyInto(context: Context, folder: String, sources: List<Uri>, onProgress: (Int) -> Unit): CopyResult {
         val cr = context.contentResolver
         val tree = Uri.parse(folder)
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val out = ArrayList<String>()
+        var firstError: String? = null
         sources.forEachIndexed { i, src ->
             try {
                 var name = "wallpaper_${System.currentTimeMillis()}_$i.jpg"
@@ -64,17 +80,23 @@ object PhotoRepo {
                 }
                 val mime = cr.getType(src) ?: "image/jpeg"
                 val dest = DocumentsContract.createDocument(cr, parent, mime, name)
-                if (dest != null) {
-                    cr.openInputStream(src)?.use { input ->
-                        cr.openOutputStream(dest)?.use { output -> input.copyTo(output) }
+                if (dest == null) {
+                    if (firstError == null) firstError = "The folder didn't accept a new file"
+                } else {
+                    val input = cr.openInputStream(src) ?: throw IllegalStateException("Couldn't read the picked photo")
+                    input.use { inp ->
+                        val output = cr.openOutputStream(dest) ?: throw IllegalStateException("Couldn't write to the folder")
+                        output.use { inp.copyTo(it) }
                     }
                     out += dest.toString()
                 }
             } catch (e: Exception) {
-                // Skip a photo that can't be read or written.
+                if (firstError == null) {
+                    firstError = if (e is SecurityException) "No permission to write here" else (e.message ?: e.javaClass.simpleName)
+                }
             }
             onProgress(i + 1)
         }
-        return out
+        return CopyResult(out, firstError)
     }
 }

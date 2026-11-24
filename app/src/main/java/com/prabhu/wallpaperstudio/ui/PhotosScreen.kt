@@ -129,7 +129,15 @@ private fun rememberFolderPicker(): () -> Unit {
             }
             val s = uri.toString()
             val folders = Store.stringList(Keys.FOLDERS)
-            if (s !in folders) Store.putStringList(Keys.FOLDERS, folders + s)
+            val old = folders.firstOrNull { PhotoRepo.sameFolder(it, s) }
+            when {
+                old == null -> Store.putStringList(Keys.FOLDERS, folders + s)
+                old != s -> {
+                    // Same folder picked again: keep its place and its Home / Lock setting.
+                    Store.putStringList(Keys.FOLDERS, folders.map { if (it == old) s else it })
+                    Store.setFolderTarget(s, Store.targetOf(old))
+                }
+            }
             Store.edit { putString(Keys.CURRENT_FOLDER, s) }
         }
     }
@@ -497,6 +505,16 @@ private fun AddPhotosSheet(
     var progress by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // After "Choose folder again", switch to the folder just picked.
+    Store.tick.intValue
+    val current = Store.prefs.getString(Keys.CURRENT_FOLDER, null)
+    LaunchedEffect(current) {
+        if (current != null && current in folders) {
+            dest = current
+            error = null
+        }
+    }
+
     ModalBottomSheet(onDismissRequest = { if (progress == null) onDismiss() }) {
         Column(
             Modifier
@@ -579,6 +597,10 @@ private fun AddPhotosSheet(
                 val e = error
                 if (e != null) {
                     Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = onAddFolder) {
+                        Icon(Icons.Rounded.CreateNewFolder, null)
+                        Text("Choose folder again", Modifier.padding(start = 8.dp))
+                    }
                 }
                 val p = progress
                 if (p != null) {
@@ -594,31 +616,37 @@ private fun AddPhotosSheet(
                         enabled = p == null && dest != null,
                         onClick = {
                             val folder = dest ?: return@Button
-                            if (!PhotoRepo.canWrite(context, folder)) {
-                                error = "Wallpaper Studio needs permission to add photos to this folder. " +
-                                    "Tap \"+ Add another folder\" and choose the same folder again."
-                                return@Button
-                            }
                             error = null
                             progress = 0
                             scope.launch {
-                                val added = withContext(Dispatchers.IO) {
+                                val result = withContext(Dispatchers.IO) {
                                     PhotoRepo.copyInto(context, folder, picked) { n ->
                                         scope.launch { progress = n }
                                     }
                                 }
+                                val added = result.added
                                 if (tick && added.isNotEmpty()) {
                                     Store.putStringList(Keys.SELECTED, (Store.stringList(Keys.SELECTED) + added).distinct())
                                 }
                                 progress = null
-                                Toast.makeText(context, "Copied ${added.size} photos", Toast.LENGTH_SHORT).show()
-                                onCopied(folder)
+                                if (added.isEmpty()) {
+                                    error = "Couldn't copy into ${PhotoRepo.folderName(folder)}. Tap Choose folder again, " +
+                                        "open the same folder and tap Use this folder, then Allow.\n(Reason: ${result.error ?: "unknown"})"
+                                } else {
+                                    val skipped = picked.size - added.size
+                                    Toast.makeText(
+                                        context,
+                                        if (skipped == 0) "Copied ${added.size} photos" else "Copied ${added.size}, skipped $skipped",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                    onCopied(folder)
+                                }
                             }
                         },
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
-                    ) { Text(if (p == null) "Copy ${picked.size} photos" else "Copying $p of ${picked.size}…") }
+                    ) { Text(if (p == null) "Copy ${picked.size} " + (if (picked.size == 1) "photo" else "photos") else "Copying $p of ${picked.size}…") }
                 }
             }
         }
