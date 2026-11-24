@@ -1,5 +1,6 @@
 package com.prabhu.wallpaperstudio.wallpaper
 
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -60,6 +61,10 @@ class PhotoWallpaperService : WallpaperService() {
         private var sw = 0
         private var sh = 0
         private var hwCanvasOk = true
+        private var locked = false
+        private var reportedFlags = 0
+        private var batteryBlocked = false
+        private var lastDrawNanos = 0L
 
         private var current: Slide? = null
         private var previous: Slide? = null
@@ -100,9 +105,15 @@ class PhotoWallpaperService : WallpaperService() {
 
         private val changeRunnable = Runnable { onTimer() }
         private var receiverRegistered = false
-        private val unlockReceiver = object : BroadcastReceiver() {
+        private val screenReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                if (Store.bool(Keys.ON_UNLOCK, false) && !paused) advance()
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> setLocked(true)
+                    Intent.ACTION_USER_PRESENT -> {
+                        setLocked(false)
+                        if (Store.bool(Keys.ON_UNLOCK, false) && !paused) advance()
+                    }
+                }
             }
         }
 
@@ -112,22 +123,29 @@ class PhotoWallpaperService : WallpaperService() {
             sensorManager = getSystemService(SensorManager::class.java)
             readSettings()
             Store.prefs.registerOnSharedPreferenceChangeListener(this)
+            locked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
             if (!isPreview) {
+                val filter = IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_USER_PRESENT)
+                }
                 ContextCompat.registerReceiver(
                     this@PhotoWallpaperService,
-                    unlockReceiver,
-                    IntentFilter(Intent.ACTION_USER_PRESENT),
+                    screenReceiver,
+                    filter,
                     ContextCompat.RECEIVER_EXPORTED,
                 )
                 receiverRegistered = true
+                report()
             }
         }
 
         override fun onDestroy() {
             Store.prefs.unregisterOnSharedPreferenceChangeListener(this)
+            if (!isPreview && reportedFlags != 0) reportScreens(video = false, flags = reportedFlags, running = false)
             if (receiverRegistered) {
                 try {
-                    unregisterReceiver(unlockReceiver)
+                    unregisterReceiver(screenReceiver)
                 } catch (_: Exception) {
                 }
             }
@@ -169,6 +187,10 @@ class PhotoWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(isVisible: Boolean) {
             visible = isVisible
             if (isVisible) {
+                batteryBlocked = Battery.blocks3d(this@PhotoWallpaperService)
+                if (!isPreview) report()
+                val nowLocked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+                if (nowLocked != locked) setLocked(nowLocked)
                 // Handler timers stop while the phone sleeps, so catch up here.
                 if (!isPreview && !paused && dueForChange()) advance()
                 scheduleTimer()
@@ -193,7 +215,12 @@ class PhotoWallpaperService : WallpaperService() {
         override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
             readSettings()
             when (key) {
-                Keys.PHOTO_INDEX, Keys.SELECTED -> loadCurrent(force = false)
+                Keys.PHOTO_INDEX, Keys.PHOTO_INDEX_LOCK, Keys.SELECTED,
+                Keys.FOLDERS, Keys.FOLDER_TARGETS -> loadCurrent(force = false)
+                Keys.BAT_3D_SAVER, Keys.BAT_3D_LOW -> {
+                    batteryBlocked = Battery.blocks3d(this@PhotoWallpaperService)
+                    updateGyro()
+                }
                 Keys.CROPS -> refreshCrop()
                 Keys.FIT -> drawFrame()
                 Keys.INTERVAL_MIN, Keys.LAST_CHANGE, Keys.PAUSED -> scheduleTimer()
@@ -232,35 +259,66 @@ class PhotoWallpaperService : WallpaperService() {
         }
 
         private fun advance() {
-            val list = Store.stringList(Keys.SELECTED)
             val now = System.currentTimeMillis()
-            if (list.size < 2) {
-                Store.edit { putLong(Keys.LAST_CHANGE, now) }
-                return
-            }
-            val cur = Store.int(Keys.PHOTO_INDEX, 0).mod(list.size)
-            val next = if (Store.order() == "shuffle") {
-                var n: Int
-                do {
-                    n = Random.nextInt(list.size)
-                } while (n == cur)
-                n
-            } else {
-                (cur + 1) % list.size
-            }
+            val shuffle = Store.order() == "shuffle"
             Store.edit {
-                putInt(Keys.PHOTO_INDEX, next)
+                for (t in listOf("home", "lock")) {
+                    val size = Store.photosFor(t).size
+                    if (size < 2) continue
+                    val cur = Store.int(Store.indexKey(t), 0).mod(size)
+                    val next = if (shuffle) {
+                        var n: Int
+                        do {
+                            n = Random.nextInt(size)
+                        } while (n == cur)
+                        n
+                    } else {
+                        (cur + 1) % size
+                    }
+                    putInt(Store.indexKey(t), next)
+                }
                 putLong(Keys.LAST_CHANGE, now)
             }
         }
 
+        // ---------- home / lock ----------
+
+        /** "home" or "lock": which set of photos this engine shows right now. */
+        private fun target(): String {
+            if (isPreview) return "home"
+            val f = screenFlags()
+            val home = f and android.app.WallpaperManager.FLAG_SYSTEM != 0
+            val lock = f and android.app.WallpaperManager.FLAG_LOCK != 0
+            return when {
+                home && lock -> if (locked) "lock" else "home"
+                lock -> "lock"
+                else -> "home"
+            }
+        }
+
+        private fun setLocked(value: Boolean) {
+            if (locked == value) return
+            locked = value
+            loadCurrent(force = false)
+        }
+
+        private fun report() {
+            val f = screenFlags()
+            if (f == reportedFlags) return
+            if (reportedFlags != 0) reportScreens(video = false, flags = reportedFlags, running = false)
+            reportScreens(video = false, flags = f, running = true)
+            reportedFlags = f
+        }
+
+        override fun onWallpaperFlagsChanged(which: Int) {
+            super.onWallpaperFlagsChanged(which)
+            if (!isPreview) report()
+            loadCurrent(force = false)
+        }
+
         // ---------- loading ----------
 
-        private fun currentUri(): String? {
-            val list = Store.stringList(Keys.SELECTED)
-            if (list.isEmpty()) return null
-            return list[Store.int(Keys.PHOTO_INDEX, 0).mod(list.size)]
-        }
+        private fun currentUri(): String? = Store.currentPhoto(target())
 
         private fun refreshCrop() {
             val cur = current ?: return
@@ -317,7 +375,7 @@ class PhotoWallpaperService : WallpaperService() {
 
         // ---------- gyro ----------
 
-        private fun gyroWanted() = visible && gyroOn && intensity > 0f
+        private fun gyroWanted() = visible && gyroOn && intensity > 0f && !batteryBlocked
 
         private fun updateGyro() {
             val sm = sensorManager ?: return
@@ -373,7 +431,15 @@ class PhotoWallpaperService : WallpaperService() {
         override fun doFrame(frameTimeNanos: Long) {
             frameScheduled = false
             if (!visible || !hasSurface) return
-            val alpha = 0.35f - 0.3f * smooth
+            val inTransition = previous != null &&
+                SystemClock.uptimeMillis() - transitionStart < TRANSITION_MS
+            // Gyro motion is drawn at most 30 times a second to save battery.
+            if (!inTransition && frameTimeNanos - lastDrawNanos < 30_000_000L) {
+                requestFrames()
+                return
+            }
+            lastDrawNanos = frameTimeNanos
+            val alpha = (0.35f - 0.3f * smooth) * 1.6f
             val targetX = if (gyroRegistered) tiltX / LIMIT else 0f
             val targetY = if (gyroRegistered) tiltY / LIMIT else 0f
             smoothX += (targetX - smoothX) * alpha

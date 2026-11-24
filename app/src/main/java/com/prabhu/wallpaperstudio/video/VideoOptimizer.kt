@@ -29,7 +29,7 @@ import kotlin.math.roundToInt
 
 /**
  * Re-encodes a video so it matches this phone: cropped to the screen shape,
- * scaled to the chosen quality, trimmed, frame rate capped and audio removed.
+ * scaled to the chosen quality, trimmed, frame rate capped and (optionally) muted.
  * A smaller, screen-shaped file plays smoother and uses less battery.
  */
 object VideoOptimizer {
@@ -44,6 +44,8 @@ object VideoOptimizer {
         val fps: Int,
         /** true = crop to fill the screen, false = fit inside it. */
         val fill: Boolean,
+        /** Keep the sound track. */
+        val sound: Boolean = false,
     )
 
     /** Must be called from the main thread. */
@@ -70,7 +72,7 @@ object VideoOptimizer {
             )
 
             val edited = EditedMediaItem.Builder(item)
-                .setRemoveAudio(true)
+                .setRemoveAudio(!o.sound)
                 .setEffects(Effects(emptyList(), videoEffects))
                 .build()
             val composition = Composition.Builder(EditedMediaItemSequence(edited))

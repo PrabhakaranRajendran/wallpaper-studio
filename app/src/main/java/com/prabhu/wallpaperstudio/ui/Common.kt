@@ -4,6 +4,7 @@ import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,24 +29,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.prabhu.wallpaperstudio.data.Keys
+import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.wallpaper.PhotoWallpaperService
 import com.prabhu.wallpaperstudio.wallpaper.VideoWallpaperService
 
-/** Which of our wallpapers is active right now: "photos", "video" or null. */
-fun activeMode(context: Context): String? {
+/**
+ * What one screen is showing: "photos", "video", or null (not ours).
+ * The wallpapers report this themselves while they run, which is more
+ * reliable than asking the system on some phones.
+ */
+fun screenStatus(context: Context, lock: Boolean): String? {
+    val video = Store.bool(if (lock) Keys.ACTIVE_VIDEO_LOCK else Keys.ACTIVE_VIDEO_HOME, false)
+    val photos = Store.bool(if (lock) Keys.ACTIVE_PHOTO_LOCK else Keys.ACTIVE_PHOTO_HOME, false)
+    if (!video && !photos) return null
+    // If the system clearly reports someone else's live wallpaper, trust that.
     val info = try {
-        WallpaperManager.getInstance(context).wallpaperInfo
+        val wm = WallpaperManager.getInstance(context)
+        if (lock && Build.VERSION.SDK_INT >= 34) wm.getWallpaperInfo(WallpaperManager.FLAG_LOCK) else if (!lock) wm.wallpaperInfo else null
     } catch (e: Exception) {
         null
-    } ?: return null
-    if (info.packageName != context.packageName) return null
-    return if (info.serviceName == VideoWallpaperService::class.java.name) "video" else "photos"
+    }
+    if (info != null && info.packageName != context.packageName) return null
+    if (info != null) {
+        return if (info.serviceName == VideoWallpaperService::class.java.name) "video" else "photos"
+    }
+    return if (video) "video" else "photos"
 }
 
 /** Opens Android's "Set wallpaper" screen for our photo or video wallpaper. */
 fun applyWallpaper(context: Context, video: Boolean) {
     val service = if (video) VideoWallpaperService::class.java else PhotoWallpaperService::class.java
-    if (activeMode(context) == (if (video) "video" else "photos")) {
+    val want = if (video) "video" else "photos"
+    if (screenStatus(context, lock = false) == want || screenStatus(context, lock = true) == want) {
         Toast.makeText(context, "Wallpaper updated", Toast.LENGTH_SHORT).show()
         return
     }

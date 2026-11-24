@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -72,7 +75,7 @@ fun VideoScreen() {
     var info by remember { mutableStateOf<VideoInfo?>(null) }
     var start by rememberSaveable { mutableStateOf(0f) }
     var end by rememberSaveable { mutableStateOf(0f) }
-    var quality by rememberSaveable { mutableIntStateOf(0) }   // 0 = screen, 1080, 720
+    var quality by rememberSaveable { mutableIntStateOf(1080) } // 0 = screen, 1080, 720
     var fps by rememberSaveable { mutableIntStateOf(30) }      // 0 = original
     var fill by rememberSaveable { mutableStateOf(true) }
     var progress by remember { mutableStateOf<Int?>(null) }
@@ -131,6 +134,7 @@ fun VideoScreen() {
                     }
                 }
             }
+            if (Store.prefs.getString(Keys.VIDEO_PATH, null) != null) SoundCard(Modifier.padding(top = 12.dp))
             return@Column
         }
 
@@ -157,6 +161,8 @@ fun VideoScreen() {
             }
         }
 
+        SoundCard(Modifier.padding(top = 12.dp))
+
         Card(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -182,7 +188,7 @@ fun VideoScreen() {
                     if (fill) "fill" else "fit",
                 ) { fill = it == "fill" }
                 Text(
-                    "Sound is removed. Video pauses when the screen is off.",
+                    "1080p at 30 fps is the battery-friendly choice. Video pauses when the screen is off.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
@@ -217,6 +223,7 @@ fun VideoScreen() {
                                 shortSide = quality,
                                 fps = fps,
                                 fill = fill,
+                                sound = Store.bool(Keys.VIDEO_SOUND, false),
                             ),
                         ) { progress = it }
                         val old = Store.prefs.getString(Keys.VIDEO_PATH, null)
@@ -242,6 +249,43 @@ fun VideoScreen() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
         )
+    }
+}
+
+@Composable
+private fun SoundCard(modifier: Modifier = Modifier) {
+    Store.tick.intValue
+    val on = Store.bool(Keys.VIDEO_SOUND, false)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(MaterialTheme.colorScheme.inverseSurface)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (on) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.inverseOnSurface,
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp)
+        ) {
+            Text(
+                if (on) "Sound on" else "Sound off",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+            )
+            Text(
+                if (on) "Plays whenever your home screen shows" else "Muted. Turn on to hear the video",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.75f),
+            )
+        }
+        Switch(checked = on, onCheckedChange = { v -> Store.edit { putBoolean(Keys.VIDEO_SOUND, v) } })
     }
 }
 

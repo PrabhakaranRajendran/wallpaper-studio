@@ -3,7 +3,27 @@ package com.prabhu.wallpaperstudio.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.ArrowDropDown
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -77,14 +97,207 @@ import kotlinx.coroutines.withContext
 fun PhotosScreen(selectedTab: Int, onTabChange: (Int) -> Unit, onCrop: (String) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         ScreenTitle("Photos", Modifier.padding(horizontal = 16.dp))
-        TabRow(selectedTabIndex = selectedTab) {
-            Tab(selected = selectedTab == 0, onClick = { onTabChange(0) }, text = { Text("Choose photos") })
-            Tab(selected = selectedTab == 1, onClick = { onTabChange(1) }, text = { Text("Rotation") })
+        TabRow(selectedTabIndex = selectedTab.coerceIn(0, 2)) {
+            Tab(selected = selectedTab == 0, onClick = { onTabChange(0) }, text = { Text("Folders") })
+            Tab(selected = selectedTab == 1, onClick = { onTabChange(1) }, text = { Text("Choose photos") })
+            Tab(selected = selectedTab == 2, onClick = { onTabChange(2) }, text = { Text("Rotation") })
         }
-        if (selectedTab == 0) {
-            ChoosePhotos(onDone = { onTabChange(1) }, onCrop = onCrop)
-        } else {
-            RotationSettings(onChoose = { onTabChange(0) }, onCrop = onCrop)
+        when (selectedTab) {
+            0 -> FoldersTab(onOpenFolder = { onTabChange(1) })
+            1 -> ChoosePhotos(onDone = { onTabChange(2) }, onCrop = onCrop)
+            else -> RotationSettings(onChoose = { onTabChange(1) }, onCrop = onCrop)
+        }
+    }
+}
+
+/** Opens Android's folder chooser and remembers the folder (with permission to read and add photos). */
+@Composable
+private fun rememberFolderPicker(): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            } catch (_: Exception) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {
+                }
+            }
+            val s = uri.toString()
+            val folders = Store.stringList(Keys.FOLDERS)
+            if (s !in folders) Store.putStringList(Keys.FOLDERS, folders + s)
+            Store.edit { putString(Keys.CURRENT_FOLDER, s) }
+        }
+    }
+    return { launcher.launch(null) }
+}
+
+// ---------------- Folders ----------------
+
+@Composable
+private fun FoldersTab(onOpenFolder: () -> Unit) {
+    val context = LocalContext.current
+    Store.tick.intValue
+    val folders = Store.stringList(Keys.FOLDERS)
+    val pickFolder = rememberFolderPicker()
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Text(
+            "Choose where each folder's photos appear.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, top = 14.dp, bottom = 10.dp),
+        )
+        if (folders.isEmpty()) {
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Add your first folder", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Pick a folder for your wallpaper photos. You can make one for the Home screen, " +
+                            "one for the Lock screen, or use one folder for both.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            folders.forEach { f ->
+                FolderCard(
+                    folder = f,
+                    onOpen = {
+                        Store.edit { putString(Keys.CURRENT_FOLDER, f) }
+                        onOpenFolder()
+                    },
+                    onRemove = { removeFolder(context, f) },
+                )
+            }
+        }
+        OutlinedButton(
+            onClick = pickFolder,
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .fillMaxWidth()
+                .height(48.dp),
+        ) {
+            Icon(Icons.Rounded.CreateNewFolder, null)
+            Text("Add folder", Modifier.padding(start = 8.dp))
+        }
+        if (folders.isNotEmpty()) {
+            Row(
+                Modifier
+                    .padding(top = 12.dp, bottom = 24.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SummaryTile("HOME SCREEN", Store.photosFor("home").size, Modifier.weight(1f))
+                SummaryTile("LOCK SCREEN", Store.photosFor("lock").size, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryTile(label: String, count: Int, modifier: Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        Text(
+            "$count photos",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+}
+
+@Composable
+private fun FolderCard(folder: String, onOpen: () -> Unit, onRemove: () -> Unit) {
+    val context = LocalContext.current
+    var items by remember(folder) { mutableStateOf<List<PhotoItem>?>(null) }
+    LaunchedEffect(folder) {
+        items = withContext(Dispatchers.IO) { PhotoRepo.listImages(context, folder) }
+    }
+    var menu by remember { mutableStateOf(false) }
+    val target = Store.targetOf(folder)
+
+    Card(
+        onClick = onOpen,
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row {
+                    (items ?: emptyList()).take(3).forEachIndexed { i, it ->
+                        AsyncImage(
+                            model = ImageRequest.Builder(context).data(it.uri).size(160).build(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .padding(start = if (i == 0) 0.dp else 0.dp)
+                                .offset(x = (-12 * i).dp)
+                                .size(width = 36.dp, height = 44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(2.dp, MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        )
+                    }
+                    if (items.isNullOrEmpty()) {
+                        Box(
+                            Modifier
+                                .size(width = 36.dp, height = 44.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(PhotoRepo.folderName(folder), style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        items?.let { "${it.size} photos" } ?: "Loading…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Box {
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Rounded.MoreVert, contentDescription = "Folder options")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Choose photos") }, onClick = { menu = false; onOpen() })
+                        DropdownMenuItem(text = { Text("Remove folder") }, onClick = { menu = false; onRemove() })
+                    }
+                }
+            }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                val options = listOf("home" to "Home", "lock" to "Lock", "both" to "Both")
+                options.forEachIndexed { i, (value, label) ->
+                    SegmentedButton(
+                        selected = target == value,
+                        onClick = { Store.setFolderTarget(folder, value) },
+                        shape = SegmentedButtonDefaults.itemShape(index = i, count = options.size),
+                    ) { Text(label) }
+                }
+            }
         }
     }
 }
@@ -101,89 +314,90 @@ private fun ChoosePhotos(onDone: () -> Unit, onCrop: (String) -> Unit) {
     val selected = Store.stringList(Keys.SELECTED)
     val selectedSet = remember(selected) { selected.toHashSet() }
     var items by remember { mutableStateOf<List<PhotoItem>?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    var picked by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val pickFolder = rememberFolderPicker()
 
-    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) {
-            }
-            val s = uri.toString()
-            if (s !in folders) Store.putStringList(Keys.FOLDERS, folders + s)
-            Store.edit { putString(Keys.CURRENT_FOLDER, s) }
-        }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isNotEmpty()) picked = uris
     }
 
-    LaunchedEffect(current) {
+    LaunchedEffect(current, reload) {
         items = null
         items = if (current == null) emptyList() else withContext(Dispatchers.IO) {
             PhotoRepo.listImages(context, current)
         }
     }
 
-    if (folders.isEmpty()) {
-        Column(Modifier.padding(16.dp)) {
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Choose a folder", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Pick the folder that holds your wallpaper photos, then tick the ones you want. " +
-                            "You can add more folders later.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Button(onClick = { folderPicker.launch(null) }) {
-                        Icon(Icons.Rounded.CreateNewFolder, contentDescription = null)
-                        Text("Choose folder", Modifier.padding(start = 8.dp))
-                    }
-                }
-            }
-        }
-        return
+    if (picked.isNotEmpty()) {
+        AddPhotosSheet(
+            picked = picked,
+            folders = folders,
+            initialFolder = current,
+            onPickAgain = {
+                photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onAddFolder = pickFolder,
+            onDismiss = { picked = emptyList() },
+            onCopied = { dest ->
+                picked = emptyList()
+                Store.edit { putString(Keys.CURRENT_FOLDER, dest) }
+                reload++
+            },
+        )
     }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                items(folders) { f ->
-                    FilterChip(
-                        selected = f == current,
-                        onClick = { Store.edit { putString(Keys.CURRENT_FOLDER, f) } },
-                        label = { Text(PhotoRepo.folderName(f)) },
-                        leadingIcon = if (f == current) {
-                            { Icon(Icons.Rounded.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
-                        } else {
-                            null
-                        },
-                        trailingIcon = if (f == current) {
-                            {
-                                Icon(
-                                    Icons.Rounded.Close,
-                                    contentDescription = "Remove folder",
-                                    modifier = Modifier
-                                        .size(FilterChipDefaults.IconSize)
-                                        .combinedClickable(onClick = { removeFolder(context, f) }),
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                    )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    items(folders) { f ->
+                        FilterChip(
+                            selected = f == current,
+                            onClick = { Store.edit { putString(Keys.CURRENT_FOLDER, f) } },
+                            label = { Text(PhotoRepo.folderName(f)) },
+                            leadingIcon = if (f == current) {
+                                { Icon(Icons.Rounded.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    item {
+                        AssistChip(
+                            onClick = pickFolder,
+                            label = { Text("Folder") },
+                            leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) },
+                        )
+                    }
                 }
-                item {
-                    AssistChip(
-                        onClick = { folderPicker.launch(null) },
-                        label = { Text("Folder") },
-                        leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(18.dp)) },
-                    )
-                }
+            }
+            Button(
+                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .fillMaxWidth()
+                    .height(48.dp),
+            ) {
+                Icon(Icons.Rounded.AddPhotoAlternate, null)
+                Text("Add photos from Gallery / Google Photos", Modifier.padding(start = 8.dp))
+            }
+
+            if (folders.isEmpty()) {
+                Text(
+                    "Add a folder first (tap + Folder). New photos are copied into it.",
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
             }
 
             val list = items
@@ -217,7 +431,7 @@ private fun ChoosePhotos(onDone: () -> Unit, onCrop: (String) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 list.isEmpty() -> Text(
-                    "No photos in this folder.",
+                    "No photos in this folder yet. Tap Add photos to copy some in.",
                     modifier = Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -265,13 +479,172 @@ private fun ChoosePhotos(onDone: () -> Unit, onCrop: (String) -> Unit) {
     }
 }
 
+@Composable
+private fun AddPhotosSheet(
+    picked: List<Uri>,
+    folders: List<String>,
+    initialFolder: String?,
+    onPickAgain: () -> Unit,
+    onAddFolder: () -> Unit,
+    onDismiss: () -> Unit,
+    onCopied: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var dest by remember { mutableStateOf(initialFolder ?: folders.firstOrNull()) }
+    var tick by remember { mutableStateOf(true) }
+    var menu by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<Int?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    ModalBottomSheet(onDismissRequest = { if (progress == null) onDismiss() }) {
+        Column(
+            Modifier
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column {
+                Text("Add photos", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "${picked.size} picked from Gallery / Google Photos",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(picked) { uri ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context).data(uri).size(200).build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(width = 58.dp, height = 76.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    )
+                }
+            }
+
+            if (folders.isEmpty()) {
+                Text("First add a folder to copy them into.", style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = onAddFolder) { Text("Add folder") }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Copy into", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Box {
+                        OutlinedButton(
+                            onClick = { menu = true },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                        ) {
+                            Icon(Icons.Rounded.Folder, null)
+                            Text(
+                                dest?.let { PhotoRepo.folderName(it) } ?: "Choose a folder",
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 10.dp),
+                            )
+                            dest?.let {
+                                Text(
+                                    targetLabel(Store.targetOf(it)),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer)
+                                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                                )
+                            }
+                            Icon(Icons.Rounded.ArrowDropDown, null)
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            folders.forEach { f ->
+                                DropdownMenuItem(
+                                    text = { Text("${PhotoRepo.folderName(f)} · ${targetLabel(Store.targetOf(f))}") },
+                                    onClick = { dest = f; menu = false },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("+ Add another folder") },
+                                onClick = { menu = false; onAddFolder() },
+                            )
+                        }
+                    }
+                }
+                SwitchRow("Tick them for rotation", null, tick) { tick = it }
+
+                val e = error
+                if (e != null) {
+                    Text(e, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                }
+                val p = progress
+                if (p != null) {
+                    LinearProgressIndicator(progress = { p / picked.size.toFloat() }, modifier = Modifier.fillMaxWidth())
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onPickAgain,
+                        enabled = p == null,
+                        modifier = Modifier.height(52.dp),
+                    ) { Text("Pick again") }
+                    Button(
+                        enabled = p == null && dest != null,
+                        onClick = {
+                            val folder = dest ?: return@Button
+                            if (!PhotoRepo.canWrite(context, folder)) {
+                                error = "Wallpaper Studio needs permission to add photos to this folder. " +
+                                    "Tap \"+ Add another folder\" and choose the same folder again."
+                                return@Button
+                            }
+                            error = null
+                            progress = 0
+                            scope.launch {
+                                val added = withContext(Dispatchers.IO) {
+                                    PhotoRepo.copyInto(context, folder, picked) { n ->
+                                        scope.launch { progress = n }
+                                    }
+                                }
+                                if (tick && added.isNotEmpty()) {
+                                    Store.putStringList(Keys.SELECTED, (Store.stringList(Keys.SELECTED) + added).distinct())
+                                }
+                                progress = null
+                                Toast.makeText(context, "Copied ${added.size} photos", Toast.LENGTH_SHORT).show()
+                                onCopied(folder)
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                    ) { Text(if (p == null) "Copy ${picked.size} photos" else "Copying $p of ${picked.size}…") }
+                }
+            }
+        }
+    }
+}
+
+private fun targetLabel(t: String) = when (t) {
+    "home" -> "Home"
+    "lock" -> "Lock"
+    else -> "Both"
+}
+
 private fun removeFolder(context: android.content.Context, folder: String) {
     val folders = Store.stringList(Keys.FOLDERS) - folder
     Store.putStringList(Keys.FOLDERS, folders)
     Store.edit { putString(Keys.CURRENT_FOLDER, folders.firstOrNull()) }
     try {
-        context.contentResolver.releasePersistableUriPermission(Uri.parse(folder), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.contentResolver.releasePersistableUriPermission(
+            Uri.parse(folder),
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+        )
     } catch (_: Exception) {
+        try {
+            context.contentResolver.releasePersistableUriPermission(Uri.parse(folder), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+        }
     }
 }
 

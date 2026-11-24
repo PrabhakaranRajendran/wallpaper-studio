@@ -33,6 +33,21 @@ object Keys {
     const val RECENTER = "recenter"
 
     const val VIDEO_PATH = "video_path"
+    const val VIDEO_SOUND = "video_sound"
+
+    const val PALETTE = "palette"             // aqua | ocean | mint | sunset | mono | you
+    const val PHOTO_INDEX_LOCK = "photo_index_lock"
+    const val FOLDER_TARGETS = "folder_targets" // JSON object: folder URI -> home | lock | both
+
+    const val BAT_3D_SAVER = "bat_3d_saver"
+    const val BAT_3D_LOW = "bat_3d_low"
+    const val BAT_VIDEO_SAVER = "bat_video_saver"
+
+    // Written by the wallpapers themselves while they run.
+    const val ACTIVE_PHOTO_HOME = "active_photo_home"
+    const val ACTIVE_PHOTO_LOCK = "active_photo_lock"
+    const val ACTIVE_VIDEO_HOME = "active_video_home"
+    const val ACTIVE_VIDEO_LOCK = "active_video_lock"
 }
 
 /** Per-photo crop. x / y are offsets as a fraction of the screen size. */
@@ -139,4 +154,51 @@ object Store {
     fun gyroSmooth() = float(Keys.GYRO_SMOOTH, 0.75f)
     fun gyroStyle() = string(Keys.GYRO_STYLE, "tilt")
     fun paused() = bool(Keys.PAUSED, false)
+    fun palette() = string(Keys.PALETTE, "aqua")
+
+    fun folderTargets(): Map<String, String> {
+        val raw = prefs.getString(Keys.FOLDER_TARGETS, null) ?: return emptyMap()
+        return try {
+            val o = JSONObject(raw)
+            val out = HashMap<String, String>()
+            o.keys().forEach { k -> out[k] = o.getString(k) }
+            out
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun setFolderTarget(folder: String, target: String) {
+        val o = JSONObject()
+        folderTargets().forEach { (k, v) -> o.put(k, v) }
+        o.put(folder, target)
+        edit { putString(Keys.FOLDER_TARGETS, o.toString()) }
+    }
+
+    fun targetOf(folder: String): String = folderTargets()[folder] ?: "both"
+
+    /** The folder a selected photo came from, if it is still in the list. */
+    fun folderOf(photo: String, folders: List<String> = stringList(Keys.FOLDERS)): String? =
+        folders.firstOrNull { photo.startsWith("$it/document/") }
+
+    /** Selected photos for "home" or "lock", based on each folder's setting. */
+    fun photosFor(target: String): List<String> {
+        val selected = stringList(Keys.SELECTED)
+        val folders = stringList(Keys.FOLDERS)
+        val targets = folderTargets()
+        val out = selected.filter { uri ->
+            val f = folderOf(uri, folders)
+            val t = if (f == null) "both" else targets[f] ?: "both"
+            t == "both" || t == target
+        }
+        return out.ifEmpty { selected }
+    }
+
+    fun indexKey(target: String) = if (target == "lock") Keys.PHOTO_INDEX_LOCK else Keys.PHOTO_INDEX
+
+    fun currentPhoto(target: String): String? {
+        val list = photosFor(target)
+        if (list.isEmpty()) return null
+        return list[int(indexKey(target), 0).mod(list.size)]
+    }
 }
