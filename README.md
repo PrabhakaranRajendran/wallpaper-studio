@@ -20,11 +20,11 @@ Open the [Releases page](https://github.com/PrabhakaranRajendran/wallpaper-studi
 `.github/workflows/build.yml` builds the APK on GitHub:
 
 - every push to `main` builds a test APK (download it from the Actions run);
-- pushing a tag like `v1.1.0` builds the signed APK and publishes it as a release.
+- **Actions › Build APK › Run workflow** with a version (e.g. `1.1.0`) builds the signed APK and publishes it as a release (pushing a tag like `v1.1.0` does the same).
 
 Releases are signed with the key stored in the `SIGNING_KEY` repository secret. Keep a backup of that key: every update must be signed with the same key, or Android refuses to install it over the old version.
 
 ### Publishing a new version
 
 1. Update `release-notes.md` (this text appears in the app's update dialog).
-2. Tag and push: `git tag v1.1.0 && git push origin v1.1.0`.
+2. Open **Actions › Build APK › Run workflow**, type the new version (e.g. `1.1.0`) and press **Run workflow**.

@@ -1,13 +1,19 @@
 name: Build APK
 
 # Every push to main builds a test APK (kept as a download on the run page).
-# Pushing a version tag such as v1.0.0 builds the signed APK and publishes it
-# on the Releases page, where the app's "Check for updates" finds it.
+# To publish a version: Actions > Build APK > Run workflow, type the version
+# (e.g. 1.0.0). The signed APK goes on the Releases page, where the app's
+# "Check for updates" finds it. Pushing a tag like v1.0.0 does the same.
 on:
   push:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 1.0.0 (leave empty for a test build)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -28,9 +34,15 @@ jobs:
           gradle-version: '8.10.2'
 
       - name: Set version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          if [ -n "$INPUT_VERSION" ]; then
+            echo "VERSION_NAME=${INPUT_VERSION#v}" >> "$GITHUB_ENV"
+            echo "RELEASE=true" >> "$GITHUB_ENV"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "RELEASE=true" >> "$GITHUB_ENV"
           else
             echo "VERSION_NAME=0.0.${GITHUB_RUN_NUMBER}-dev" >> "$GITHUB_ENV"
           fi
@@ -43,7 +55,7 @@ jobs:
           if [ -n "$SIGNING_KEY" ]; then
             echo "$SIGNING_KEY" | base64 -d > "$RUNNER_TEMP/release.p12"
             echo "SIGNING_FILE=$RUNNER_TEMP/release.p12" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          elif [ "$RELEASE" = "true" ]; then
             echo "::error title=Signing key missing::Add the SIGNING_KEY secret before publishing a release."
             exit 1
           fi
@@ -73,8 +85,11 @@ jobs:
           path: out/*.apk
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ env.VERSION_NAME }}
+          name: Wallpaper Studio v${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
           files: out/*.apk
           body_path: release-notes.md
