@@ -1,0 +1,500 @@
+package com.prabhu.wallpaperstudio.wallpaper
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.Camera
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.service.wallpaper.WallpaperService
+import android.view.Choreographer
+import android.view.SurfaceHolder
+import androidx.core.content.ContextCompat
+import com.prabhu.wallpaperstudio.data.Crop
+import com.prabhu.wallpaperstudio.data.Keys
+import com.prabhu.wallpaperstudio.data.Store
+import com.prabhu.wallpaperstudio.render.PhotoMath
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.random.Random
+
+class PhotoWallpaperService : WallpaperService() {
+
+    override fun onCreateEngine(): Engine = PhotoEngine()
+
+    private class Slide(
+        val uri: String,
+        val bitmap: Bitmap,
+        val blur: Bitmap,
+        val crop: Crop?,
+        val filter: ColorFilter?,
+    )
+
+    inner class PhotoEngine : Engine(),
+        SharedPreferences.OnSharedPreferenceChangeListener,
+        SensorEventListener,
+        Choreographer.FrameCallback {
+
+        private val handler = Handler(Looper.getMainLooper())
+        private val loader: ExecutorService = Executors.newSingleThreadExecutor()
+        private var visible = false
+        private var hasSurface = false
+        private var sw = 0
+        private var sh = 0
+        private var hwCanvasOk = true
+
+        private var current: Slide? = null
+        private var previous: Slide? = null
+        private var transitionStart = 0L
+        private var loadingUri: String? = null
+        private var loadGeneration = 0
+        private var failedInARow = 0
+
+        // Cached settings
+        private var transition = "fade"
+        private var fit = "fill"
+        private var gyroOn = true
+        private var intensity = 0.55f
+        private var smooth = 0.75f
+        private var style = "tilt"
+        private var paused = false
+
+        private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+        }
+        private val matrix = Matrix()
+        private val camMatrix = Matrix()
+        private val camera = Camera()
+
+        // Gyro
+        private var sensorManager: SensorManager? = null
+        private var gyroRegistered = false
+        private var tiltX = 0f
+        private var tiltY = 0f
+        private var smoothX = 0f
+        private var smoothY = 0f
+        private var lastSensorTs = 0L
+        private var lastDrawnX = 99f
+        private var lastDrawnY = 99f
+        private var frameScheduled = false
+
+        private val changeRunnable = Runnable { onTimer() }
+        private var receiverRegistered = false
+        private val unlockReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (Store.bool(Keys.ON_UNLOCK, false) && !paused) advance()
+            }
+        }
+
+        override fun onCreate(surfaceHolder: SurfaceHolder) {
+            super.onCreate(surfaceHolder)
+            setTouchEventsEnabled(false)
+            sensorManager = getSystemService(SensorManager::class.java)
+            readSettings()
+            Store.prefs.registerOnSharedPreferenceChangeListener(this)
+            if (!isPreview) {
+                ContextCompat.registerReceiver(
+                    this@PhotoWallpaperService,
+                    unlockReceiver,
+                    IntentFilter(Intent.ACTION_USER_PRESENT),
+                    ContextCompat.RECEIVER_EXPORTED,
+                )
+                receiverRegistered = true
+            }
+        }
+
+        override fun onDestroy() {
+            Store.prefs.unregisterOnSharedPreferenceChangeListener(this)
+            if (receiverRegistered) {
+                try {
+                    unregisterReceiver(unlockReceiver)
+                } catch (_: Exception) {
+                }
+            }
+            handler.removeCallbacksAndMessages(null)
+            Choreographer.getInstance().removeFrameCallback(this)
+            unregisterGyro()
+            loader.shutdownNow()
+            super.onDestroy()
+        }
+
+        override fun onSurfaceCreated(holder: SurfaceHolder) {
+            super.onSurfaceCreated(holder)
+            hasSurface = true
+        }
+
+        override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+            super.onSurfaceChanged(holder, format, width, height)
+            hasSurface = true
+            val sizeChanged = width != sw || height != sh
+            sw = width
+            sh = height
+            textPaint.textSize = width / 26f
+            if (sizeChanged) loadCurrent(force = true) else drawFrame()
+            scheduleTimer()
+        }
+
+        override fun onSurfaceRedrawNeeded(holder: SurfaceHolder) {
+            super.onSurfaceRedrawNeeded(holder)
+            drawFrame()
+        }
+
+        override fun onSurfaceDestroyed(holder: SurfaceHolder) {
+            hasSurface = false
+            Choreographer.getInstance().removeFrameCallback(this)
+            frameScheduled = false
+            super.onSurfaceDestroyed(holder)
+        }
+
+        override fun onVisibilityChanged(isVisible: Boolean) {
+            visible = isVisible
+            if (isVisible) {
+                // Handler timers stop while the phone sleeps, so catch up here.
+                if (!isPreview && !paused && dueForChange()) advance()
+                scheduleTimer()
+                if (current == null) loadCurrent(force = false)
+                drawFrame()
+            }
+            updateGyro()
+        }
+
+        // ---------- settings ----------
+
+        private fun readSettings() {
+            transition = Store.transition()
+            fit = Store.fit()
+            gyroOn = Store.gyroOn()
+            intensity = Store.gyroIntensity()
+            smooth = Store.gyroSmooth()
+            style = Store.gyroStyle()
+            paused = Store.paused()
+        }
+
+        override fun onSharedPreferenceChanged(prefs: SharedPreferences?, key: String?) {
+            readSettings()
+            when (key) {
+                Keys.PHOTO_INDEX, Keys.SELECTED -> loadCurrent(force = false)
+                Keys.CROPS -> refreshCrop()
+                Keys.FIT -> drawFrame()
+                Keys.INTERVAL_MIN, Keys.LAST_CHANGE, Keys.PAUSED -> scheduleTimer()
+                Keys.CHANGE_NOW -> if (!isPreview) advance()
+                Keys.GYRO, Keys.GYRO_INTENSITY, Keys.GYRO_SMOOTH, Keys.GYRO_STYLE -> {
+                    updateGyro()
+                    lastDrawnX = 99f
+                    requestFrames()
+                    drawFrame()
+                }
+                Keys.RECENTER -> {
+                    tiltX = 0f
+                    tiltY = 0f
+                    requestFrames()
+                }
+            }
+        }
+
+        // ---------- rotation timer ----------
+
+        private fun intervalMs() = Store.intervalMin().coerceAtLeast(1) * 60_000L
+
+        private fun dueForChange() =
+            System.currentTimeMillis() - Store.long(Keys.LAST_CHANGE, 0L) >= intervalMs()
+
+        private fun scheduleTimer() {
+            handler.removeCallbacks(changeRunnable)
+            if (isPreview || paused) return
+            val last = Store.long(Keys.LAST_CHANGE, 0L)
+            val delay = (last + intervalMs() - System.currentTimeMillis()).coerceIn(1_000L, intervalMs())
+            handler.postDelayed(changeRunnable, delay)
+        }
+
+        private fun onTimer() {
+            if (!paused) advance() else scheduleTimer()
+        }
+
+        private fun advance() {
+            val list = Store.stringList(Keys.SELECTED)
+            val now = System.currentTimeMillis()
+            if (list.size < 2) {
+                Store.edit { putLong(Keys.LAST_CHANGE, now) }
+                return
+            }
+            val cur = Store.int(Keys.PHOTO_INDEX, 0).mod(list.size)
+            val next = if (Store.order() == "shuffle") {
+                var n: Int
+                do {
+                    n = Random.nextInt(list.size)
+                } while (n == cur)
+                n
+            } else {
+                (cur + 1) % list.size
+            }
+            Store.edit {
+                putInt(Keys.PHOTO_INDEX, next)
+                putLong(Keys.LAST_CHANGE, now)
+            }
+        }
+
+        // ---------- loading ----------
+
+        private fun currentUri(): String? {
+            val list = Store.stringList(Keys.SELECTED)
+            if (list.isEmpty()) return null
+            return list[Store.int(Keys.PHOTO_INDEX, 0).mod(list.size)]
+        }
+
+        private fun refreshCrop() {
+            val cur = current ?: return
+            val crop = Store.crops()[cur.uri]
+            current = Slide(cur.uri, cur.bitmap, cur.blur, crop, PhotoMath.brightnessFilter(crop?.brightness ?: 0f))
+            drawFrame()
+        }
+
+        private fun loadCurrent(force: Boolean) {
+            val uri = currentUri()
+            if (uri == null) {
+                current = null
+                previous = null
+                drawFrame()
+                return
+            }
+            if (!force && (current?.uri == uri || loadingUri == uri)) return
+            if (sw == 0 || sh == 0) return
+            loadingUri = uri
+            val gen = ++loadGeneration
+            val longSide = (max(sw, sh) * 1.25f).toInt()
+            val crop = Store.crops()[uri]
+            loader.execute {
+                val slide = try {
+                    val bmp = PhotoMath.decode(this@PhotoWallpaperService, uri, longSide)
+                    val blur = Bitmap.createScaledBitmap(
+                        bmp, max(1, bmp.width / 24), max(1, bmp.height / 24), true
+                    )
+                    Slide(uri, bmp, blur, crop, PhotoMath.brightnessFilter(crop?.brightness ?: 0f))
+                } catch (t: Throwable) {
+                    null
+                }
+                handler.post { onLoaded(gen, uri, slide) }
+            }
+        }
+
+        private fun onLoaded(gen: Int, uri: String, slide: Slide?) {
+            if (gen != loadGeneration) return
+            loadingUri = null
+            if (slide == null) {
+                // Photo deleted or access lost: move on to the next one.
+                failedInARow++
+                if (!isPreview && failedInARow < 5) advance()
+                return
+            }
+            failedInARow = 0
+            val old = current
+            val animate = old != null && old.uri != uri && transition != "none" && visible
+            previous = if (animate) old else null
+            current = slide
+            transitionStart = SystemClock.uptimeMillis()
+            if (animate) requestFrames() else drawFrame()
+        }
+
+        // ---------- gyro ----------
+
+        private fun gyroWanted() = visible && gyroOn && intensity > 0f
+
+        private fun updateGyro() {
+            val sm = sensorManager ?: return
+            if (gyroWanted() && !gyroRegistered) {
+                val sensor = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) ?: return
+                lastSensorTs = 0L
+                gyroRegistered = sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
+                requestFrames()
+            } else if (!gyroWanted() && gyroRegistered) {
+                unregisterGyro()
+                tiltX = 0f
+                tiltY = 0f
+                smoothX = 0f
+                smoothY = 0f
+                drawFrame()
+            }
+        }
+
+        private fun unregisterGyro() {
+            if (gyroRegistered) sensorManager?.unregisterListener(this)
+            gyroRegistered = false
+        }
+
+        override fun onSensorChanged(event: SensorEvent) {
+            if (lastSensorTs != 0L) {
+                val dt = (event.timestamp - lastSensorTs) / 1_000_000_000f
+                if (dt > 0f && dt < 0.2f) {
+                    // Turning the phone left/right moves the picture sideways,
+                    // tipping it forward/back moves it up/down.
+                    tiltX += event.values[1] * dt
+                    tiltY += event.values[0] * dt
+                    // Drift slowly back to centre so the picture never gets stuck.
+                    val decay = exp(-dt / 1.6f)
+                    tiltX = (tiltX * decay).coerceIn(-LIMIT, LIMIT)
+                    tiltY = (tiltY * decay).coerceIn(-LIMIT, LIMIT)
+                }
+            }
+            lastSensorTs = event.timestamp
+            requestFrames()
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
+        // ---------- drawing ----------
+
+        private fun requestFrames() {
+            if (!frameScheduled && visible && hasSurface) {
+                frameScheduled = true
+                Choreographer.getInstance().postFrameCallback(this)
+            }
+        }
+
+        override fun doFrame(frameTimeNanos: Long) {
+            frameScheduled = false
+            if (!visible || !hasSurface) return
+            val alpha = 0.35f - 0.3f * smooth
+            val targetX = if (gyroRegistered) tiltX / LIMIT else 0f
+            val targetY = if (gyroRegistered) tiltY / LIMIT else 0f
+            smoothX += (targetX - smoothX) * alpha
+            smoothY += (targetY - smoothY) * alpha
+
+            val transitioning = previous != null &&
+                SystemClock.uptimeMillis() - transitionStart < TRANSITION_MS
+            val moved = abs(smoothX - lastDrawnX) > 0.002f || abs(smoothY - lastDrawnY) > 0.002f
+            if (transitioning || moved || previous != null) drawFrame()
+            if (!transitioning) previous = null
+
+            val settling = abs(targetX - smoothX) > 0.002f || abs(targetY - smoothY) > 0.002f
+            if (transitioning || settling) requestFrames()
+        }
+
+        private fun lockCanvas(holder: SurfaceHolder): Canvas? {
+            if (hwCanvasOk) {
+                try {
+                    return holder.lockHardwareCanvas()
+                } catch (e: Exception) {
+                    hwCanvasOk = false
+                }
+            }
+            return try {
+                holder.lockCanvas()
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        private fun drawFrame() {
+            if (!hasSurface || sw == 0) return
+            val holder = surfaceHolder
+            val canvas = lockCanvas(holder) ?: return
+            try {
+                canvas.drawColor(Color.BLACK)
+                val cur = current
+                if (cur == null) {
+                    drawEmpty(canvas)
+                } else {
+                    val prev = previous
+                    val t = if (prev == null) 1f else
+                        ((SystemClock.uptimeMillis() - transitionStart) / TRANSITION_MS.toFloat()).coerceIn(0f, 1f)
+                    val e = t * t * (3f - 2f * t)
+                    if (prev != null && t < 1f) {
+                        when (transition) {
+                            "slide" -> {
+                                drawSlide(canvas, prev, -e * sw, 1f, 255)
+                                drawSlide(canvas, cur, (1f - e) * sw, 1f, 255)
+                            }
+                            "zoom" -> {
+                                drawSlide(canvas, prev, 0f, 1f, 255)
+                                drawSlide(canvas, cur, 0f, 1f + 0.12f * (1f - e), (e * 255).toInt())
+                            }
+                            else -> {
+                                drawSlide(canvas, prev, 0f, 1f, 255)
+                                drawSlide(canvas, cur, 0f, 1f, (e * 255).toInt())
+                            }
+                        }
+                    } else {
+                        drawSlide(canvas, cur, 0f, 1f, 255)
+                    }
+                }
+                lastDrawnX = smoothX
+                lastDrawnY = smoothY
+            } finally {
+                try {
+                    holder.unlockCanvasAndPost(canvas)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        private fun drawEmpty(canvas: Canvas) {
+            canvas.drawColor(Color.rgb(0x1D, 0x20, 0x24))
+            canvas.drawText("Open Wallpaper Studio", sw / 2f, sh / 2f - textPaint.textSize, textPaint)
+            canvas.drawText("and choose your photos", sw / 2f, sh / 2f + textPaint.textSize * 0.4f, textPaint)
+        }
+
+        private fun drawSlide(canvas: Canvas, s: Slide, slideX: Float, extraScale: Float, alpha: Int) {
+            val w = sw.toFloat()
+            val h = sh.toFloat()
+            val inten = if (gyroRegistered) intensity else 0f
+            val nx = smoothX
+            val ny = smoothY
+            val over = 1f + 0.14f * inten
+            var scale = over * extraScale
+            if (style == "zoom") scale *= 1f + 0.06f * inten * min(1f, hypot(nx, ny))
+            val px = nx * 0.05f * inten * w + slideX
+            val py = ny * 0.05f * inten * h
+
+            paint.alpha = alpha
+            paint.colorFilter = s.filter
+
+            val effectiveFit = if (s.crop != null) "fill" else fit
+            if (effectiveFit == "blur") {
+                PhotoMath.place(matrix, s.blur.width, s.blur.height, w, h, null, "fill", scale * 1.05f, px * 0.6f, py * 0.6f)
+                applyTilt(nx, ny, inten, w, h)
+                canvas.drawBitmap(s.blur, matrix, paint)
+            }
+            PhotoMath.place(matrix, s.bitmap.width, s.bitmap.height, w, h, s.crop, effectiveFit, scale, px, py)
+            applyTilt(nx, ny, inten, w, h)
+            canvas.drawBitmap(s.bitmap, matrix, paint)
+        }
+
+        private fun applyTilt(nx: Float, ny: Float, inten: Float, w: Float, h: Float) {
+            if (style != "tilt" || inten <= 0f) return
+            camera.save()
+            camera.setLocation(0f, 0f, -max(w, h) / 72f * 1.2f)
+            camera.rotateY(-nx * 9f * inten)
+            camera.rotateX(ny * 9f * inten)
+            camera.getMatrix(camMatrix)
+            camera.restore()
+            camMatrix.preTranslate(-w / 2f, -h / 2f)
+            camMatrix.postTranslate(w / 2f, h / 2f)
+            matrix.postConcat(camMatrix)
+        }
+    }
+
+    companion object {
+        private const val TRANSITION_MS = 900L
+        private const val LIMIT = 0.45f
+    }
+}

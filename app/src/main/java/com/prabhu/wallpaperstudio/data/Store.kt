@@ -1,0 +1,142 @@
+package com.prabhu.wallpaperstudio.data
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.compose.runtime.mutableIntStateOf
+import org.json.JSONArray
+import org.json.JSONObject
+
+object Keys {
+    const val PAUSED = "paused"
+    const val THEME = "theme"                 // system | light | dark
+    const val DYNAMIC = "dynamic_color"
+    const val AUTO_UPDATE = "auto_update"
+    const val LAST_UPDATE_CHECK = "last_update_check"
+
+    const val FOLDERS = "folders"             // JSON array of folder (tree) URIs
+    const val CURRENT_FOLDER = "current_folder"
+    const val SELECTED = "selected_photos"    // JSON array of photo URIs
+    const val INTERVAL_MIN = "interval_min"
+    const val ON_UNLOCK = "change_on_unlock"
+    const val ORDER = "order"                 // shuffle | sequence
+    const val TRANSITION = "transition"       // fade | slide | zoom | none
+    const val FIT = "fit"                     // fill | fit | blur
+    const val CROPS = "crops"                 // JSON object: photo URI -> Crop
+    const val PHOTO_INDEX = "photo_index"
+    const val LAST_CHANGE = "last_change"
+    const val CHANGE_NOW = "change_now"
+
+    const val GYRO = "gyro_enabled"
+    const val GYRO_INTENSITY = "gyro_intensity" // 0..1
+    const val GYRO_SMOOTH = "gyro_smooth"       // 0..1
+    const val GYRO_STYLE = "gyro_style"         // tilt | shift | zoom
+    const val RECENTER = "recenter"
+
+    const val VIDEO_PATH = "video_path"
+}
+
+/** Per-photo crop. x / y are offsets as a fraction of the screen size. */
+data class Crop(
+    val zoom: Float = 1f,
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val rotation: Int = 0,
+    val flip: Boolean = false,
+    val brightness: Float = 0f,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("z", zoom.toDouble())
+        .put("x", x.toDouble())
+        .put("y", y.toDouble())
+        .put("r", rotation)
+        .put("f", flip)
+        .put("b", brightness.toDouble())
+
+    companion object {
+        fun fromJson(o: JSONObject) = Crop(
+            zoom = o.optDouble("z", 1.0).toFloat(),
+            x = o.optDouble("x", 0.0).toFloat(),
+            y = o.optDouble("y", 0.0).toFloat(),
+            rotation = o.optInt("r", 0),
+            flip = o.optBoolean("f", false),
+            brightness = o.optDouble("b", 0.0).toFloat(),
+        )
+    }
+}
+
+/**
+ * All settings live in one SharedPreferences file, shared by the app screens
+ * and the wallpaper services (same process). [tick] changes whenever any
+ * setting changes, so Compose screens that read it recompose.
+ */
+object Store {
+    lateinit var prefs: SharedPreferences
+        private set
+
+    val tick = mutableIntStateOf(0)
+
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        tick.intValue = tick.intValue + 1
+    }
+
+    fun init(context: Context) {
+        if (::prefs.isInitialized) return
+        prefs = context.applicationContext.getSharedPreferences("studio", Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun edit(block: SharedPreferences.Editor.() -> Unit) {
+        prefs.edit().apply(block).apply()
+    }
+
+    fun string(key: String, default: String): String = prefs.getString(key, default) ?: default
+    fun bool(key: String, default: Boolean) = prefs.getBoolean(key, default)
+    fun int(key: String, default: Int) = prefs.getInt(key, default)
+    fun float(key: String, default: Float) = prefs.getFloat(key, default)
+    fun long(key: String, default: Long) = prefs.getLong(key, default)
+
+    fun stringList(key: String): List<String> {
+        val raw = prefs.getString(key, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            List(arr.length()) { arr.getString(it) }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun putStringList(key: String, list: List<String>) {
+        val arr = JSONArray()
+        list.forEach { arr.put(it) }
+        edit { putString(key, arr.toString()) }
+    }
+
+    fun crops(): Map<String, Crop> {
+        val raw = prefs.getString(Keys.CROPS, null) ?: return emptyMap()
+        return try {
+            val o = JSONObject(raw)
+            val out = HashMap<String, Crop>()
+            o.keys().forEach { k -> out[k] = Crop.fromJson(o.getJSONObject(k)) }
+            out
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun putCrops(map: Map<String, Crop>) {
+        val o = JSONObject()
+        map.forEach { (k, v) -> o.put(k, v.toJson()) }
+        edit { putString(Keys.CROPS, o.toString()) }
+    }
+
+    // Defaults in one place.
+    fun intervalMin() = int(Keys.INTERVAL_MIN, 30)
+    fun transition() = string(Keys.TRANSITION, "fade")
+    fun fit() = string(Keys.FIT, "fill")
+    fun order() = string(Keys.ORDER, "shuffle")
+    fun gyroOn() = bool(Keys.GYRO, true)
+    fun gyroIntensity() = float(Keys.GYRO_INTENSITY, 0.55f)
+    fun gyroSmooth() = float(Keys.GYRO_SMOOTH, 0.75f)
+    fun gyroStyle() = string(Keys.GYRO_STYLE, "tilt")
+    fun paused() = bool(Keys.PAUSED, false)
+}

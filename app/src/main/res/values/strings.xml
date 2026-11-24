@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wallpaper Studio</string>
+    <string name="photo_wallpaper_name">Wallpaper Studio · Photos</string>
+    <string name="video_wallpaper_name">Wallpaper Studio · Video</string>
+    <string name="photo_wallpaper_description">Your photos, changing on a timer, with an optional 3D gyro effect.</string>
+    <string name="video_wallpaper_description">Your own video, optimized for this phone.</string>
+</resources>
