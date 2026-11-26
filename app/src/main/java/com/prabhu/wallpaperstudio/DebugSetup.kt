@@ -17,6 +17,11 @@ import com.prabhu.wallpaperstudio.render.LockChanger
 object DebugSetup {
     fun apply(context: Context, intent: Intent) {
         if (intent.getBooleanExtra("gen_photos", false)) generatePhotos(context)
+        if (intent.hasExtra("demo") || intent.hasExtra("tab")) {
+            // Keep the update pop-up out of test screenshots.
+            com.prabhu.wallpaperstudio.update.Updater.dialogDismissed = true
+            Store.edit { putLong(Keys.LAST_UPDATE_CHECK, System.currentTimeMillis()) }
+        }
         if (intent.getBooleanExtra("demo", false)) {
             Store.edit {
                 putString(Keys.HOME_SOURCE, "photos")

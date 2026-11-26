@@ -284,6 +284,39 @@ fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boo
     }
 }
 
+/** Big, clear choices: a card per option with a title and a line of explanation. */
+@Composable
+fun RadioCards(options: List<Triple<String, String, String>>, selected: String, onSelect: (String) -> Unit) {
+    val tap = rememberTap()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
+        options.forEach { (value, title, subtitle) ->
+            val isSel = value == selected
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(if (isSel) 2.dp else 1.dp, if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                    .clickable {
+                        tap()
+                        onSelect(value)
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.RadioButton(selected = isSel, onClick = {
+                    tap()
+                    onSelect(value)
+                })
+                Column(Modifier.padding(start = 6.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
 /** A label above a full-width single-choice segmented row. */
 @Composable
 fun ChoiceRow(label: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {

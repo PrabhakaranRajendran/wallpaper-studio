@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Store.init(this)
-        if (BuildConfig.DEBUG) DebugSetup.apply(this, intent)
+        if (BuildConfig.DEBUG && savedInstanceState == null) DebugSetup.apply(this, intent)
         LockWorker.schedule(this)
         val startTab = intent.getStringExtra("tab")?.let { name -> AppTab.entries.firstOrNull { it.name.equals(name, true) } }
         val startSub = intent.getIntExtra("sub", 0)
@@ -139,7 +139,7 @@ private fun App(startTab: AppTab, startSub: Int) {
                                 tab = t
                             },
                             icon = { Icon(t.icon, contentDescription = null) },
-                            label = { Text(t.label, maxLines = 1) },
+                            label = { Text(t.label, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Visible) },
                         )
                     }
                 }

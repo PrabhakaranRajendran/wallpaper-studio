@@ -29,8 +29,10 @@ ffmpeg -loglevel error -f lavfi -i testsrc=size=1280x720:rate=30 -t 6 -c:v libx2
 ffmpeg -loglevel error -display_rotation 90 -i /tmp/land.mp4 -c copy -y /tmp/rot.mp4 || cp /tmp/land.mp4 /tmp/rot.mp4
 adb push /tmp/rot.mp4 /data/local/tmp/rot.mp4
 adb push /tmp/land.mp4 /data/local/tmp/land.mp4
+adb shell "run-as $PKG mkdir -p files"
 adb shell "cat /data/local/tmp/rot.mp4 | run-as $PKG sh -c 'cat > files/rot.mp4'"
 adb shell "cat /data/local/tmp/land.mp4 | run-as $PKG sh -c 'cat > files/land.mp4'"
+adb shell "run-as $PKG ls -la files" > "$OUT/files.txt" 2>&1
 VID_ROT=/data/user/0/$PKG/files/rot.mp4
 VID_LAND=/data/user/0/$PKG/files/land.mp4
 
@@ -65,6 +67,10 @@ start --es palette aqua --es mode light --es tab home > /dev/null
 # ---- the real renderers, full screen
 adb shell am start -S -W -n "$PKG/.debug.RenderTestActivity" --es kind photo > /dev/null
 shot 20_render_photo 5
+adb emu sensor set gyroscope 0.8:1.6:0
+sleep 0.4
+adb emu sensor set gyroscope 0:0:0
+shot 20b_render_photo_tilted 0.3
 start --es video "$VID_ROT" --es tab wallpaper --ei sub 1
 shot 21_wallpaper_video_tab 5
 adb shell am start -S -W -n "$PKG/.debug.RenderTestActivity" --es kind video > /dev/null
@@ -75,29 +81,45 @@ shot 23_render_video_landscape 6
 start --es tab home --ez demo true
 # back to photos for the live wallpaper test
 
-# ---- set the live wallpaper through Android's own screen
-adb shell am start -a android.service.wallpaper.CHANGE_LIVE_WALLPAPER \
-  --ecn android.service.wallpaper.extra.LIVE_WALLPAPER_COMPONENT "$PKG/.wallpaper.PhotoWallpaperService"
-shot 30_system_preview 6
-tap_text "(?i)^(set wallpaper|apply|set)$" a
-sleep 3
-shot 31_after_set_tap 1
-tap_text "(?i)home and lock|home screen and lock|^home screen$" b
-sleep 3
-adb shell input keyevent KEYCODE_HOME
-shot 32_launcher_home 5
+# ---- set the live wallpapers through Android's own screen (no force-stop after this:
+#      force-stopping a live wallpaper's app makes Android drop it)
+set_live() { # $1 = service class, $2 = name for screenshots
+  adb shell am start -a android.service.wallpaper.CHANGE_LIVE_WALLPAPER \
+    --ecn android.service.wallpaper.extra.LIVE_WALLPAPER_COMPONENT "$PKG/.wallpaper.$1" > /dev/null
+  shot "${2}_a_preview" 6
+  tap_text "(?i)^(set wallpaper|apply|set)$" "${2}_a"
+  sleep 3
+  tap_text "(?i)^home screen$" "${2}_b"
+  sleep 3
+  adb shell input keyevent KEYCODE_HOME
+  shot "${2}_b_launcher" 6
+}
+start --es video "$VID_ROT" --es tab home
+set_live VideoWallpaperService 30_video_live
+adb shell am start -W -n "$PKG/.MainActivity" --es tab home > /dev/null
+shot 31_home_with_video 4
+adb shell am start -W -n "$PKG/.MainActivity" --ez demo true --es tab home > /dev/null
+sleep 2
+set_live PhotoWallpaperService 32_photo_live
+adb shell am start -W -n "$PKG/.MainActivity" --es tab home > /dev/null
+shot 33_home_with_photos 4
 
-# ---- lock screen slideshow
-adb shell am start -S -W -n "$PKG/.MainActivity" --ez lock_now true --es tab lock > /dev/null
-sleep 6
+# ---- lock screen slideshow (changes when the screen turns off)
+adb shell locksettings set-disabled false
+adb shell input keyevent KEYCODE_HOME
+sleep 1
 adb shell input keyevent KEYCODE_SLEEP
-sleep 4
+sleep 5
 adb shell input keyevent KEYCODE_WAKEUP
-shot 33_lock_screen 3
+shot 34_lock_screen 3
+adb shell input keyevent KEYCODE_SLEEP
+sleep 5
+adb shell input keyevent KEYCODE_WAKEUP
+shot 35_lock_screen_next 3
 adb shell input keyevent 82
 sleep 2
-start --es tab settings
-swipe_up; shot 34_settings_check 3
+adb shell am start -W -n "$PKG/.MainActivity" --es tab settings > /dev/null
+swipe_up; shot 36_settings_check 3
 
 # ---- logs
 adb logcat -d -b crash > "$OUT/crash.txt" 2>&1

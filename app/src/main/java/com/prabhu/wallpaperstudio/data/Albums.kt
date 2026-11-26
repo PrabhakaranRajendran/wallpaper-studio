@@ -100,14 +100,18 @@ object Albums {
 
 /** Short-lived cache of the photo lists, so the wallpaper doesn't re-scan folders all the time. */
 object PhotoLists {
-    private val cache = HashMap<String, Pair<Long, List<String>>>()
+    private class Entry(val time: Long, val dirStamp: Long, val list: List<String>)
+    private val cache = HashMap<String, Entry>()
 
     @Synchronized
     fun get(context: Context, target: String, maxAgeMs: Long = 60_000L): List<String> {
         val now = System.currentTimeMillis()
-        cache[target]?.let { (time, list) -> if (now - time < maxAgeMs) return list }
+        val dir = Albums.dir(context, target)
+        // The folder's time stamp changes whenever a photo is added or removed.
+        val stamp = dir.lastModified() + (dir.list()?.size ?: 0)
+        cache[target]?.let { e -> if (now - e.time < maxAgeMs && e.dirStamp == stamp) return e.list }
         val list = Albums.activePhotos(context, target)
-        cache[target] = now to list
+        cache[target] = Entry(now, stamp, list)
         return list
     }
 

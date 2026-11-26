@@ -68,6 +68,7 @@ private data class Overview(
     val lockPhoto: String?,
     val homeCount: Int,
     val lockCount: Int,
+    val loaded: Boolean = true,
 )
 
 @Composable
@@ -80,7 +81,7 @@ fun HomeScreen(onOpen: (AppTab) -> Unit) {
     val home = screenStatus(context, lock = false)
     val lock = screenStatus(context, lock = true)
     val paused = Store.paused()
-    var overview by remember { mutableStateOf(Overview(null, null, 0, 0)) }
+    var overview by remember { mutableStateOf(Overview(null, null, 0, 0, loaded = false)) }
     LaunchedEffect(tick, resumed) {
         overview = withContext(Dispatchers.IO) {
             Overview(
@@ -222,11 +223,11 @@ fun HomeScreen(onOpen: (AppTab) -> Unit) {
         // Things that need attention, each with a way to fix it.
         val tips = buildList {
             if (home == null) add(Triple("Your Home screen isn't using Wallpaper Studio yet.", "Set up Home screen", AppTab.Wallpaper))
-            if (Store.homeSource() == "photos" && overview.homeCount < 2) {
+            if (overview.loaded && Store.homeSource() == "photos" && overview.homeCount < 2) {
                 add(Triple("The Home screen has ${overview.homeCount} photo${if (overview.homeCount == 1) "" else "s"}. Add at least 2 so it can change.", "Add photos", AppTab.Wallpaper))
             }
             if (Store.lockMode() == "off") add(Triple("The lock screen slideshow is off.", "Set up Lock screen", AppTab.Lock))
-            if (Store.lockMode() == "slideshow" && overview.lockCount == 0) {
+            if (overview.loaded && Store.lockMode() == "slideshow" && overview.lockCount == 0) {
                 add(Triple("The Lock screen album is empty.", "Add photos", AppTab.Lock))
             }
         }

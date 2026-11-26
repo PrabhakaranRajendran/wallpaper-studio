@@ -79,11 +79,15 @@ fun LockScreenTab(onCrop: (String) -> Unit) {
                     modifier = Modifier.padding(start = 10.dp),
                 )
             }
-            ChoiceRow(
-                "Lock screen shows",
-                listOf("slideshow" to "Photo slideshow", "same" to "Same as Home", "off" to "Off"),
+            RadioCards(
+                listOf(
+                    Triple("slideshow", "Photo slideshow", "Its own photos, changed for you. Works on OnePlus and every phone."),
+                    Triple("same", "Same as Home screen", "Uses the Home wallpaper (video, 3D). Some phones, like OnePlus, may keep their own lock picture."),
+                    Triple("off", "Off", "Wallpaper Studio leaves your lock screen alone."),
+                ),
                 mode,
             ) { v ->
+                if (v == mode) return@RadioCards
                 save(
                     when (v) {
                         "slideshow" -> "Lock screen slideshow on"
@@ -94,16 +98,6 @@ fun LockScreenTab(onCrop: (String) -> Unit) {
                 LockWorker.schedule(context)
                 if (v == "slideshow") LockChanger.changeAsync(context, "slideshow turned on")
             }
-            Text(
-                when (mode) {
-                    "slideshow" -> "Sets a normal picture on the lock screen and changes it for you. This works on OnePlus and every other phone."
-                    "same" -> "Shows the Home wallpaper (photos, video, 3D) on the lock screen too. Apply it with \"Home and lock screens\". Some phones, including OnePlus, may still show their own lock picture."
-                    else -> "Turn on the slideshow to give the lock screen its own photos."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 6.dp),
-            )
             if (mode == "slideshow") {
                 val count = remember(Store.tick.intValue) { PhotoLists.get(context, Target.LOCK).size }
                 SummaryLine("Photos", "$count")
