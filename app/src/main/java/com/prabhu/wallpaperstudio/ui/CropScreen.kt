@@ -3,6 +3,7 @@ package com.prabhu.wallpaperstudio.ui
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,18 +19,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Flip
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.RotateRight
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,7 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.prabhu.wallpaperstudio.data.Crop
-import com.prabhu.wallpaperstudio.data.Keys
+import com.prabhu.wallpaperstudio.data.PhotoLists
 import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.render.PhotoMath
 import kotlinx.coroutines.Dispatchers
@@ -60,28 +59,31 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Crop & zoom for one photo, or for the video ([key] = "video").
+ * The frame has this phone's screen shape, so what you see is what the wallpaper shows.
+ */
 @Composable
-fun CropScreen(uri: String, onClose: () -> Unit) {
+fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, onClose: () -> Unit) {
     val context = LocalContext.current
+    val snack = LocalSnack.current
+    val confirmTap = rememberConfirmTap()
     val screen = remember { PhotoMath.screenSize(context) }
-    val initial = remember(uri) { Store.crops()[uri] ?: Crop() }
-    var zoom by remember(uri) { mutableFloatStateOf(initial.zoom) }
-    var ox by remember(uri) { mutableFloatStateOf(initial.x) }
-    var oy by remember(uri) { mutableFloatStateOf(initial.y) }
-    var rotation by remember(uri) { mutableIntStateOf(initial.rotation) }
-    var flip by remember(uri) { mutableStateOf(initial.flip) }
-    var brightness by remember(uri) { mutableFloatStateOf(initial.brightness) }
-    var applyAll by remember(uri) { mutableStateOf(false) }
-    var bitmap by remember(uri) { mutableStateOf<Bitmap?>(null) }
-    var failed by remember(uri) { mutableStateOf(false) }
+    val initial = remember(key) { Store.crops()[key] ?: Crop() }
+    var zoom by remember(key) { mutableFloatStateOf(initial.zoom) }
+    var ox by remember(key) { mutableFloatStateOf(initial.x) }
+    var oy by remember(key) { mutableFloatStateOf(initial.y) }
+    var rotation by remember(key) { mutableIntStateOf(initial.rotation) }
+    var flip by remember(key) { mutableStateOf(initial.flip) }
+    var brightness by remember(key) { mutableFloatStateOf(initial.brightness) }
+    var applyAll by remember(key) { mutableStateOf(false) }
+    var bitmap by remember(key) { mutableStateOf<Bitmap?>(null) }
+    var failed by remember(key) { mutableStateOf(false) }
 
-    val selected = Store.stringList(Keys.SELECTED)
-    val position = selected.indexOf(uri)
-
-    LaunchedEffect(uri) {
+    LaunchedEffect(key) {
         bitmap = withContext(Dispatchers.IO) {
             try {
-                PhotoMath.decode(context, uri, 2048)
+                if (isVideo) videoFrame(source) else PhotoMath.decode(context, source, 2048)
             } catch (e: Exception) {
                 null
             }
@@ -91,10 +93,7 @@ fun CropScreen(uri: String, onClose: () -> Unit) {
 
     fun clampOffsets() {
         val b = bitmap ?: return
-        val (mx, my) = PhotoMath.maxOffset(
-            b.width, b.height, screen.x.toFloat(), screen.y.toFloat(),
-            Crop(zoom, ox, oy, rotation, flip),
-        )
+        val (mx, my) = PhotoMath.maxOffset(b.width, b.height, screen.x.toFloat(), screen.y.toFloat(), Crop(zoom, ox, oy, rotation, flip))
         ox = ox.coerceIn(-mx, mx)
         oy = oy.coerceIn(-my, my)
     }
@@ -107,33 +106,32 @@ fun CropScreen(uri: String, onClose: () -> Unit) {
                 .padding(horizontal = 16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp)) {
-                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close") }
+                IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close without saving") }
                 Column(Modifier.weight(1f)) {
-                    Text("Crop & zoom", style = MaterialTheme.typography.titleLarge)
-                    if (position >= 0) {
-                        Text(
-                            "Photo ${position + 1} of ${selected.size}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Text(if (isVideo) "Crop & zoom video" else "Crop & zoom", style = MaterialTheme.typography.titleLarge)
+                    Text("Drag to move · pinch to zoom", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Button(onClick = {
-                    val crop = Crop(zoom, ox, oy, rotation, flip, brightness)
-                    val map = Store.crops().toMutableMap()
-                    map[uri] = crop
-                    if (applyAll) {
-                        selected.filter { it != uri }.forEach { other ->
-                            val c = map[other] ?: Crop()
-                            map[other] = c.copy(zoom = zoom)
+                PressButton(
+                    "Save",
+                    onClick = {
+                        val crop = Crop(zoom, ox, oy, rotation, flip, brightness)
+                        val map = Store.crops().toMutableMap()
+                        map[key] = crop
+                        if (applyAll && target != null) {
+                            PhotoLists.get(context, target, 0L).filter { it != key }.forEach { other ->
+                                map[other] = (map[other] ?: Crop()).copy(zoom = zoom)
+                            }
                         }
-                    }
-                    Store.putCrops(map)
-                    onClose()
-                }) { Text("Save") }
+                        Store.putCrops(map)
+                        confirmTap()
+                        snack(if (applyAll) "Crop saved, zoom used for all photos" else "Crop saved")
+                        onClose()
+                    },
+                    height = 44,
+                    modifier = Modifier.width(104.dp),
+                )
             }
 
-            // Editor: a frame with this phone's screen shape.
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
@@ -154,7 +152,7 @@ fun CropScreen(uri: String, onClose: () -> Unit) {
                         .clip(RoundedCornerShape(24.dp))
                         .background(Color.Black)
                         .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(24.dp))
-                        .pointerInput(uri, fwPx, fhPx) {
+                        .pointerInput(key, fwPx, fhPx) {
                             detectTransformGestures { _, pan, gestureZoom, _ ->
                                 zoom = (zoom * gestureZoom).coerceIn(1f, 4f)
                                 ox += pan.x / fwPx
@@ -168,21 +166,17 @@ fun CropScreen(uri: String, onClose: () -> Unit) {
                         val m = remember { Matrix() }
                         val paint = remember { Paint(Paint.FILTER_BITMAP_FLAG) }
                         Canvas(Modifier.fillMaxSize()) {
-                            PhotoMath.place(
-                                m, b.width, b.height, size.width, size.height,
-                                Crop(zoom, ox, oy, rotation, flip, brightness), "fill",
-                            )
+                            PhotoMath.place(m, b.width, b.height, size.width, size.height, Crop(zoom, ox, oy, rotation, flip, brightness), "fill")
                             paint.colorFilter = PhotoMath.brightnessFilter(brightness)
                             drawIntoCanvas { it.nativeCanvas.drawBitmap(b, m, paint) }
                         }
                     } else {
                         Text(
-                            if (failed) "Couldn't open this photo" else "Loading…",
+                            if (failed) "Couldn't open this ${if (isVideo) "video" else "photo"}" else "Loading…",
                             color = Color.White,
                             modifier = Modifier.align(Alignment.Center),
                         )
                     }
-                    // Lock-screen clock, so you can see what it will cover.
                     Text(
                         clock,
                         color = Color.White,
@@ -194,37 +188,53 @@ fun CropScreen(uri: String, onClose: () -> Unit) {
                 }
             }
 
-            SliderLabel("Zoom", "%.1f×".format(zoom))
-            Slider(
-                value = zoom,
-                onValueChange = {
-                    zoom = it
-                    clampOffsets()
-                },
-                valueRange = 1f..4f,
-            )
-            SliderLabel("Brightness", "${(brightness * 100).toInt()}%")
-            Slider(value = brightness, onValueChange = { brightness = it }, valueRange = -0.5f..0.5f)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                FilledTonalButton(
-                    onClick = {
-                        rotation = (rotation + 90) % 360
-                        clampOffsets()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Icon(Icons.Rounded.RotateRight, null); Text(" Rotate") }
-                FilledTonalButton(onClick = { flip = !flip }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Rounded.Flip, null); Text(" Flip")
-                }
-                FilledTonalButton(
-                    onClick = {
-                        zoom = 1f; ox = 0f; oy = 0f; rotation = 0; flip = false; brightness = 0f
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Icon(Icons.Rounded.RestartAlt, null); Text(" Reset") }
+            SliderRow("Zoom", "%.1f×".format(zoom), zoom, 1f..4f, onChange = {
+                zoom = it
+                clampOffsets()
+            })
+            if (!isVideo) {
+                SliderRow("Brightness", "${(brightness * 100).toInt()}%", brightness, -0.5f..0.5f, onChange = { brightness = it })
             }
-            SwitchRow("Use this zoom for all photos", null, applyAll) { applyAll = it }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                PressButton("Rotate", onClick = {
+                    rotation = (rotation + 90) % 360
+                    clampOffsets()
+                }, icon = Icons.Rounded.RotateRight, style = BtnStyle.Tonal, height = 46, modifier = Modifier.weight(1f))
+                PressButton("Flip", onClick = { flip = !flip }, icon = Icons.Rounded.Flip, style = BtnStyle.Tonal, height = 46, modifier = Modifier.weight(1f))
+                PressButton("Reset", onClick = {
+                    zoom = 1f; ox = 0f; oy = 0f; rotation = 0; flip = false; brightness = 0f
+                }, icon = Icons.Rounded.RestartAlt, style = BtnStyle.Tonal, height = 46, modifier = Modifier.weight(1f))
+            }
+            if (!isVideo && target != null) {
+                SwitchRow("Use this zoom for all photos", null, applyAll) { applyAll = it }
+            } else {
+                Box(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+/** First frame of a video, standing upright. */
+fun videoFrame(path: String): Bitmap? {
+    val r = MediaMetadataRetriever()
+    return try {
+        r.setDataSource(path)
+        val frame = r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
+        val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+        val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: frame.width
+        // Some phones return the frame still lying on its side: turn it upright.
+        if (rot % 180 != 0 && frame.width == w) {
+            val m = Matrix().apply { postRotate(rot.toFloat()) }
+            Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, m, true)
+        } else {
+            frame
+        }
+    } catch (e: Exception) {
+        null
+    } finally {
+        try {
+            r.release()
+        } catch (_: Exception) {
         }
     }
 }

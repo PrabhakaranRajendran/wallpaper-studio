@@ -1,6 +1,9 @@
-Wallpaper Studio 1.1.1
+Wallpaper Studio 2.0
 
-- Fixed: photos not changing when some selected photos could no longer be opened (they're now skipped right away)
-- Fixed: "Add photos" refusing to copy even after permission was given; if it still can't, a "Choose folder again" button shows the reason
-- Removing a folder also removes its photos from the rotation
-- New: Settings > Wallpaper check shows what the wallpaper is doing and its recent activity
+- New tabs: Wallpaper (Home screen) and Lock screen, each with its own photos and settings
+- Lock screen slideshow that works on OnePlus: a new photo every time you lock, or on a timer
+- Add photos from Gallery / Google Photos straight into the Home or Lock album (no folder permissions needed)
+- Video fixed: portrait and landscape videos stand upright, Fill / Fit, Crop & zoom, 3D effect on video too
+- Clock & widgets on the Home screen: clock, date, battery, weather, your own text, next calendar event – each with font, colour, size and position, with a live preview
+- 10 themes plus Material You, Light / Dark, 3D buttons and vibration on tap
+- A pop-up confirms every change; clear "what you've chosen" summaries on each tab

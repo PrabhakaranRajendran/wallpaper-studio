@@ -6,38 +6,56 @@ import androidx.compose.runtime.mutableIntStateOf
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** The two places a picture can go. */
+object Target {
+    const val HOME = "home"
+    const val LOCK = "lock"
+}
+
 object Keys {
     const val PAUSED = "paused"
     const val THEME = "theme"                 // system | light | dark
-    const val DYNAMIC = "dynamic_color"
+    const val PALETTE = "palette"             // see Palettes, or "you"
+    const val HAPTICS = "haptics"
+    const val PRESS_3D = "press_3d"
     const val AUTO_UPDATE = "auto_update"
     const val LAST_UPDATE_CHECK = "last_update_check"
+    const val MIGRATED_V2 = "migrated_v2"
 
-    const val FOLDERS = "folders"             // JSON array of folder (tree) URIs
-    const val CURRENT_FOLDER = "current_folder"
-    const val SELECTED = "selected_photos"    // JSON array of photo URIs
-    const val INTERVAL_MIN = "interval_min"
-    const val ON_UNLOCK = "change_on_unlock"
-    const val ORDER = "order"                 // shuffle | sequence
-    const val TRANSITION = "transition"       // fade | slide | zoom | none
-    const val FIT = "fit"                     // fill | fit | blur
-    const val CROPS = "crops"                 // JSON object: photo URI -> Crop
-    const val PHOTO_INDEX = "photo_index"
-    const val LAST_CHANGE = "last_change"
-    const val CHANGE_NOW = "change_now"
+    // Per target (prefix "home_" or "lock_")
+    fun folders(t: String) = "${t}_folders"   // linked phone folders (JSON list of tree URIs)
+    fun hidden(t: String) = "${t}_hidden"     // photos left out of the rotation (JSON list)
+    fun interval(t: String) = "${t}_interval" // minutes; lock: 0 = every time the screen turns off
+    fun order(t: String) = "${t}_order"       // shuffle | sequence
+    fun fit(t: String) = "${t}_fit"           // fill | fit | blur
+    fun index(t: String) = "${t}_index"
+    fun last(t: String) = "${t}_last"         // when it last changed
+    fun change(t: String) = "${t}_change_now"
+
+    const val HOME_SOURCE = "home_source"     // photos | video
+    const val HOME_TRANSITION = "home_transition" // fade | slide | zoom | none
+    const val HOME_ON_UNLOCK = "home_on_unlock"
+    const val LOCK_MODE = "lock_mode"         // slideshow | same | off
+
+    const val CROPS = "crops"                 // JSON object: photo -> Crop ("video" for the video)
 
     const val GYRO = "gyro_enabled"
-    const val GYRO_INTENSITY = "gyro_intensity" // 0..1
-    const val GYRO_SMOOTH = "gyro_smooth"       // 0..1
-    const val GYRO_STYLE = "gyro_style"         // tilt | shift | zoom
+    const val GYRO_INTENSITY = "gyro_intensity"
+    const val GYRO_SMOOTH = "gyro_smooth"
+    const val GYRO_STYLE = "gyro_style"       // tilt | shift | zoom
     const val RECENTER = "recenter"
 
     const val VIDEO_PATH = "video_path"
     const val VIDEO_SOUND = "video_sound"
+    const val VIDEO_FIT = "video_fit"         // fill | fit
 
-    const val PALETTE = "palette"             // aqua | ocean | mint | sunset | mono | you
-    const val PHOTO_INDEX_LOCK = "photo_index_lock"
-    const val FOLDER_TARGETS = "folder_targets" // JSON object: folder URI -> home | lock | both
+    const val WIDGETS = "widgets"             // JSON list of WidgetItem
+    const val WIDGET_SHADOW = "widget_shadow"
+    const val WEATHER_CITY = "weather_city"
+    const val WEATHER_LAT = "weather_lat"
+    const val WEATHER_LON = "weather_lon"
+    const val WEATHER_TEXT = "weather_text"
+    const val WEATHER_TIME = "weather_time"
 
     const val BAT_3D_SAVER = "bat_3d_saver"
     const val BAT_3D_LOW = "bat_3d_low"
@@ -48,7 +66,17 @@ object Keys {
     const val ACTIVE_PHOTO_LOCK = "active_photo_lock"
     const val ACTIVE_VIDEO_HOME = "active_video_home"
     const val ACTIVE_VIDEO_LOCK = "active_video_lock"
-    const val ENGINE_LOG = "engine_log"       // last few things the wallpaper did
+    const val LOCK_LAST_PHOTO = "lock_last_photo"
+    const val ENGINE_LOG = "engine_log"
+
+    // Old (1.x) keys, read once for migration
+    const val OLD_FOLDERS = "folders"
+    const val OLD_TARGETS = "folder_targets"
+    const val OLD_INTERVAL = "interval_min"
+    const val OLD_ORDER = "order"
+    const val OLD_TRANSITION = "transition"
+    const val OLD_FIT = "fit"
+    const val OLD_ON_UNLOCK = "change_on_unlock"
 }
 
 /** Per-photo crop. x / y are offsets as a fraction of the screen size. */
@@ -99,6 +127,7 @@ object Store {
         if (::prefs.isInitialized) return
         prefs = context.applicationContext.getSharedPreferences("studio", Context.MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(listener)
+        migrate()
     }
 
     fun edit(block: SharedPreferences.Editor.() -> Unit) {
@@ -145,70 +174,67 @@ object Store {
         edit { putString(Keys.CROPS, o.toString()) }
     }
 
-    // Defaults in one place.
-    fun intervalMin() = int(Keys.INTERVAL_MIN, 30)
-    fun transition() = string(Keys.TRANSITION, "fade")
-    fun fit() = string(Keys.FIT, "fill")
-    fun order() = string(Keys.ORDER, "shuffle")
+    fun putCrop(key: String, crop: Crop?) {
+        val m = crops().toMutableMap()
+        if (crop == null) m.remove(key) else m[key] = crop
+        putCrops(m)
+    }
+
+    // ---- defaults in one place ----
+    fun interval(t: String) = int(Keys.interval(t), if (t == Target.LOCK) 0 else 30)
+    fun order(t: String) = string(Keys.order(t), "shuffle")
+    fun fit(t: String) = string(Keys.fit(t), "fill")
+    fun homeSource() = string(Keys.HOME_SOURCE, "photos")
+    fun transition() = string(Keys.HOME_TRANSITION, "fade")
+    fun lockMode() = string(Keys.LOCK_MODE, "off")
     fun gyroOn() = bool(Keys.GYRO, true)
     fun gyroIntensity() = float(Keys.GYRO_INTENSITY, 0.55f)
     fun gyroSmooth() = float(Keys.GYRO_SMOOTH, 0.75f)
     fun gyroStyle() = string(Keys.GYRO_STYLE, "tilt")
     fun paused() = bool(Keys.PAUSED, false)
     fun palette() = string(Keys.PALETTE, "aqua")
+    fun haptics() = bool(Keys.HAPTICS, true)
+    fun press3d() = bool(Keys.PRESS_3D, true)
 
-    fun folderTargets(): Map<String, String> {
-        val raw = prefs.getString(Keys.FOLDER_TARGETS, null) ?: return emptyMap()
-        return try {
-            val o = JSONObject(raw)
-            val out = HashMap<String, String>()
-            o.keys().forEach { k -> out[k] = o.getString(k) }
-            out
-        } catch (e: Exception) {
-            emptyMap()
-        }
-    }
-
-    fun setFolderTarget(folder: String, target: String) {
-        val o = JSONObject()
-        folderTargets().forEach { (k, v) -> o.put(k, v) }
-        o.put(folder, target)
-        edit { putString(Keys.FOLDER_TARGETS, o.toString()) }
-    }
-
-    fun targetOf(folder: String): String = folderTargets()[folder] ?: "both"
-
-    /** The folder a selected photo came from, if it is still in the list. */
-    fun folderOf(photo: String, folders: List<String> = stringList(Keys.FOLDERS)): String? =
-        folders.firstOrNull { photo.startsWith("$it/document/") }
-            ?: folders.firstOrNull { PhotoRepo.sameFolder(it, photo) }
-
-    /** Selected photos for "home" or "lock", based on each folder's setting. */
-    fun photosFor(target: String): List<String> {
-        val selected = stringList(Keys.SELECTED)
-        val folders = stringList(Keys.FOLDERS)
-        val targets = folderTargets()
-        // Only photos from folders that are still added (others can't be opened).
-        val valid = selected.mapNotNull { uri -> folderOf(uri, folders)?.let { uri to it } }
-        val out = valid.filter { (_, f) ->
-            val t = targets[f] ?: "both"
-            t == "both" || t == target
-        }.map { it.first }
-        return out.ifEmpty { valid.map { it.first } }
-    }
-
-    /** Adds a line to the wallpaper's activity log (shown in Settings > Wallpaper check). */
+    /** Adds a line to the wallpaper's activity log (Settings > Wallpaper check). */
     fun log(message: String) {
         val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
         val lines = string(Keys.ENGINE_LOG, "").lines().filter { it.isNotBlank() } + "$time  $message"
-        edit { putString(Keys.ENGINE_LOG, lines.takeLast(6).joinToString("\n")) }
+        edit { putString(Keys.ENGINE_LOG, lines.takeLast(8).joinToString("\n")) }
     }
 
-    fun indexKey(target: String) = if (target == "lock") Keys.PHOTO_INDEX_LOCK else Keys.PHOTO_INDEX
-
-    fun currentPhoto(target: String): String? {
-        val list = photosFor(target)
-        if (list.isEmpty()) return null
-        return list[int(indexKey(target), 0).mod(list.size)]
+    /** Moves 1.x settings to the 2.0 layout, once. */
+    private fun migrate() {
+        if (prefs.getBoolean(Keys.MIGRATED_V2, false)) return
+        val e = prefs.edit()
+        val oldFolders = stringList(Keys.OLD_FOLDERS)
+        if (oldFolders.isNotEmpty()) {
+            val targets = try {
+                JSONObject(prefs.getString(Keys.OLD_TARGETS, null) ?: "{}")
+            } catch (ex: Exception) {
+                JSONObject()
+            }
+            val home = JSONArray()
+            val lock = JSONArray()
+            oldFolders.forEach { f ->
+                when (targets.optString(f, "both")) {
+                    "home" -> home.put(f)
+                    "lock" -> lock.put(f)
+                    else -> {
+                        home.put(f)
+                        lock.put(f)
+                    }
+                }
+            }
+            e.putString(Keys.folders(Target.HOME), home.toString())
+            e.putString(Keys.folders(Target.LOCK), lock.toString())
+        }
+        if (prefs.contains(Keys.OLD_INTERVAL)) e.putInt(Keys.interval(Target.HOME), prefs.getInt(Keys.OLD_INTERVAL, 30))
+        prefs.getString(Keys.OLD_ORDER, null)?.let { e.putString(Keys.order(Target.HOME), it) }
+        prefs.getString(Keys.OLD_TRANSITION, null)?.let { e.putString(Keys.HOME_TRANSITION, it) }
+        prefs.getString(Keys.OLD_FIT, null)?.let { e.putString(Keys.fit(Target.HOME), it) }
+        if (prefs.contains(Keys.OLD_ON_UNLOCK)) e.putBoolean(Keys.HOME_ON_UNLOCK, prefs.getBoolean(Keys.OLD_ON_UNLOCK, false))
+        e.putBoolean(Keys.MIGRATED_V2, true)
+        e.apply()
     }
 }

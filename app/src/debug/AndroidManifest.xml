@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test builds only: shows the wallpaper drawing full screen, for automatic screenshots. -->
+        <activity
+            android:name=".debug.RenderTestActivity"
+            android:exported="true"
+            android:theme="@style/Theme.WallpaperStudio" />
+    </application>
+</manifest>

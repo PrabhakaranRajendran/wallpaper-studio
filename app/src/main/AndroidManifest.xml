@@ -10,6 +10,10 @@
 
     <!-- Only used to check GitHub for new versions. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lock screen slideshow sets a normal picture on the lock screen. -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- Only asked for if you turn on the "Next calendar event" widget. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- Lets "Update now" open the Android installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 

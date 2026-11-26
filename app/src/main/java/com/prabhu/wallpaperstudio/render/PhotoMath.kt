@@ -74,7 +74,8 @@ object PhotoMath {
 
     /** Decodes a photo just big enough for a screen whose long side is [longSide]. */
     fun decode(context: Context, uri: String, longSide: Int) = ImageDecoder.decodeBitmap(
-        ImageDecoder.createSource(context.contentResolver, Uri.parse(uri))
+        if (uri.startsWith("/")) ImageDecoder.createSource(java.io.File(uri))
+        else ImageDecoder.createSource(context.contentResolver, Uri.parse(uri))
     ) { decoder, info, _ ->
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         val imgLong = max(info.size.width, info.size.height)

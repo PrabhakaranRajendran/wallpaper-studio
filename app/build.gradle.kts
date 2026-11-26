@@ -97,6 +97,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     val media3 = "1.4.1"
     implementation("androidx.media3:media3-common:$media3")
