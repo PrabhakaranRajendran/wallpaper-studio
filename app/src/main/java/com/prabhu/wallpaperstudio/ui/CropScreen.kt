@@ -3,7 +3,6 @@ package com.prabhu.wallpaperstudio.ui
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,11 +59,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Crop & zoom for one photo, or for the video ([key] = "video").
+ * Crop & zoom for one photo.
  * The frame has this phone's screen shape, so what you see is what the wallpaper shows.
  */
 @Composable
-fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, onClose: () -> Unit) {
+fun CropScreen(key: String, source: String, target: String?, onClose: () -> Unit) {
     val context = LocalContext.current
     val snack = LocalSnack.current
     val confirmTap = rememberConfirmTap()
@@ -83,7 +82,7 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
     LaunchedEffect(key) {
         bitmap = withContext(Dispatchers.IO) {
             try {
-                if (isVideo) videoFrame(source) else PhotoMath.decode(context, source, 2048)
+                PhotoMath.decode(context, source, 2048)
             } catch (e: Exception) {
                 null
             }
@@ -108,7 +107,7 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp)) {
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, contentDescription = "Close without saving") }
                 Column(Modifier.weight(1f)) {
-                    Text(if (isVideo) "Crop & zoom video" else "Crop & zoom", style = MaterialTheme.typography.titleLarge)
+                    Text("Crop & zoom", style = MaterialTheme.typography.titleLarge)
                     Text("Drag to move · pinch to zoom", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 PressButton(
@@ -172,7 +171,7 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
                         }
                     } else {
                         Text(
-                            if (failed) "Couldn't open this ${if (isVideo) "video" else "photo"}" else "Loading…",
+                            if (failed) "Couldn't open this photo" else "Loading…",
                             color = Color.White,
                             modifier = Modifier.align(Alignment.Center),
                         )
@@ -192,7 +191,7 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
                 zoom = it
                 clampOffsets()
             })
-            if (!isVideo) {
+            run {
                 SliderRow("Brightness", "${(brightness * 100).toInt()}%", brightness, -0.5f..0.5f, onChange = { brightness = it })
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -205,7 +204,7 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
                     zoom = 1f; ox = 0f; oy = 0f; rotation = 0; flip = false; brightness = 0f
                 }, icon = Icons.Rounded.RestartAlt, style = BtnStyle.Tonal, height = 46, modifier = Modifier.weight(1f))
             }
-            if (!isVideo && target != null) {
+            if (target != null) {
                 SwitchRow("Use this zoom for all photos", null, applyAll) { applyAll = it }
             } else {
                 Box(Modifier.height(12.dp))
@@ -214,27 +213,3 @@ fun CropScreen(key: String, source: String, isVideo: Boolean, target: String?, o
     }
 }
 
-/** First frame of a video, standing upright. */
-fun videoFrame(path: String): Bitmap? {
-    val r = MediaMetadataRetriever()
-    return try {
-        r.setDataSource(path)
-        val frame = r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: return null
-        val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-        val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: frame.width
-        // Some phones return the frame still lying on its side: turn it upright.
-        if (rot % 180 != 0 && frame.width == w) {
-            val m = Matrix().apply { postRotate(rot.toFloat()) }
-            Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, m, true)
-        } else {
-            frame
-        }
-    } catch (e: Exception) {
-        null
-    } finally {
-        try {
-            r.release()
-        } catch (_: Exception) {
-        }
-    }
-}

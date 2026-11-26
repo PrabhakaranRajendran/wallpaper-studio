@@ -32,12 +32,11 @@ object Keys {
     fun last(t: String) = "${t}_last"         // when it last changed
     fun change(t: String) = "${t}_change_now"
 
-    const val HOME_SOURCE = "home_source"     // photos | video
     const val HOME_TRANSITION = "home_transition" // fade | slide | zoom | none
     const val HOME_ON_UNLOCK = "home_on_unlock"
-    const val LOCK_MODE = "lock_mode"         // slideshow | same | off
+    const val LOCK_MODE = "lock_mode"         // slideshow | off
 
-    const val CROPS = "crops"                 // JSON object: photo -> Crop ("video" for the video)
+    const val CROPS = "crops"                 // JSON object: photo -> Crop
 
     const val GYRO = "gyro_enabled"
     const val GYRO_INTENSITY = "gyro_intensity"
@@ -45,11 +44,8 @@ object Keys {
     const val GYRO_STYLE = "gyro_style"       // tilt | shift | zoom
     const val RECENTER = "recenter"
 
-    const val VIDEO_PATH = "video_path"
-    const val VIDEO_SOUND = "video_sound"
-    const val VIDEO_FIT = "video_fit"         // fill | fit
 
-    const val WIDGETS = "widgets"             // JSON list of WidgetItem
+    fun widgets(t: String) = if (t == "lock") "widgets_lock" else "widgets" // JSON list of WidgetItem
     const val WIDGET_SHADOW = "widget_shadow"
     const val WEATHER_CITY = "weather_city"
     const val WEATHER_LAT = "weather_lat"
@@ -57,15 +53,13 @@ object Keys {
     const val WEATHER_TEXT = "weather_text"
     const val WEATHER_TIME = "weather_time"
 
-    const val BAT_3D_SAVER = "bat_3d_saver"
-    const val BAT_3D_LOW = "bat_3d_low"
-    const val BAT_VIDEO_SAVER = "bat_video_saver"
+    const val BAT_STOP_ON = "bat_stop_on"       // stop everything when the battery is low
+    const val BAT_STOP_LEVEL = "bat_stop_level" // percent
+    const val BAT_SAVER_STOP = "bat_saver_stop" // stop everything while Android Battery Saver is on
 
     // Written by the wallpapers themselves while they run.
     const val ACTIVE_PHOTO_HOME = "active_photo_home"
     const val ACTIVE_PHOTO_LOCK = "active_photo_lock"
-    const val ACTIVE_VIDEO_HOME = "active_video_home"
-    const val ACTIVE_VIDEO_LOCK = "active_video_lock"
     const val LOCK_LAST_PHOTO = "lock_last_photo"
     const val ENGINE_LOG = "engine_log"
 
@@ -184,7 +178,6 @@ object Store {
     fun interval(t: String) = int(Keys.interval(t), if (t == Target.LOCK) 0 else 30)
     fun order(t: String) = string(Keys.order(t), "shuffle")
     fun fit(t: String) = string(Keys.fit(t), "smart")
-    fun homeSource() = string(Keys.HOME_SOURCE, "photos")
     fun transition() = string(Keys.HOME_TRANSITION, "fade")
     fun lockMode() = string(Keys.LOCK_MODE, "off")
     fun gyroOn() = bool(Keys.GYRO, true)

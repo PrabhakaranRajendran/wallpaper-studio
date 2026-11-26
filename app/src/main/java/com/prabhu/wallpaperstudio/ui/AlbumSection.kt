@@ -1,5 +1,8 @@
 package com.prabhu.wallpaperstudio.ui
 
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.foundation.combinedClickable
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -81,6 +84,9 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
     var copying by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var selectedPhoto by remember { mutableStateOf<String?>(null) }
     var showAll by remember { mutableStateOf(false) }
+    var selecting by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var confirmRemoveMany by remember { mutableStateOf(false) }
     val folders = Store.stringList(Keys.folders(target))
     val hidden = Store.stringList(Keys.hidden(target)).toHashSet()
     val other = if (target == Target.HOME) Target.LOCK else Target.HOME
@@ -122,6 +128,23 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
         }
     }
 
+    if (confirmRemoveMany) {
+        ConfirmDialog(
+            title = "Remove ${selected.size} photo${if (selected.size == 1) "" else "s"}?",
+            message = "They are deleted from the Wallpaper Studio album. Originals in your Gallery or Google Photos aren't touched. To just stop showing them, use Hide instead.",
+            confirm = "Remove",
+            onConfirm = {
+                confirmRemoveMany = false
+                val n = selected.size
+                Albums.removeMany(context, target, selected)
+                selected = emptySet()
+                reload++
+                snack("$n photo${if (n == 1) "" else "s"} removed")
+            },
+            onDismiss = { confirmRemoveMany = false },
+        )
+    }
+
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f)) {
@@ -135,6 +158,12 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
                     Text("${list.size - active} hidden", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            if ((photos ?: emptyList()).isNotEmpty()) {
+                TextButton(onClick = {
+                    selecting = !selecting
+                    selected = emptySet()
+                }) { Text(if (selecting) "Done" else "Select") }
+            }
         }
 
         PressButton(
@@ -146,6 +175,52 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
                 .fillMaxWidth()
                 .padding(top = 10.dp),
         )
+
+        if (selecting) {
+            val all = photos ?: emptyList()
+            Column(
+                Modifier
+                    .padding(top = 10.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (selected.isEmpty()) "Tap photos to select them" else "${selected.size} selected",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { selected = all.toSet() }) { Text("All") }
+                    TextButton(onClick = { selected = emptySet() }) { Text("None") }
+                }
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PressButton("Hide", onClick = {
+                        if (selected.isEmpty()) {
+                            snack("Select photos first")
+                        } else {
+                            Albums.setHiddenMany(target, selected, true)
+                            snack("${selected.size} photo${if (selected.size == 1) "" else "s"} hidden")
+                            selected = emptySet()
+                        }
+                    }, icon = Icons.Rounded.VisibilityOff, style = BtnStyle.Tonal, height = 44, modifier = Modifier.weight(1f))
+                    PressButton("Show", onClick = {
+                        if (selected.isEmpty()) {
+                            snack("Select photos first")
+                        } else {
+                            Albums.setHiddenMany(target, selected, false)
+                            snack("${selected.size} photo${if (selected.size == 1) "" else "s"} back in the rotation")
+                            selected = emptySet()
+                        }
+                    }, icon = Icons.Rounded.Visibility, style = BtnStyle.Tonal, height = 44, modifier = Modifier.weight(1f))
+                    PressButton("Remove", onClick = {
+                        if (selected.isEmpty()) snack("Select photos first") else confirmRemoveMany = true
+                    }, icon = Icons.Rounded.Delete, style = BtnStyle.Outline, height = 44, modifier = Modifier.weight(1f))
+                }
+            }
+        }
 
         val c = copying
         if (c != null) {
@@ -185,7 +260,19 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
                                 .aspectRatio(0.75f)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .clickable { selectedPhoto = p }
+                                .combinedClickable(
+                                    onClick = {
+                                        if (selecting) {
+                                            selected = if (p in selected) selected - p else selected + p
+                                        } else {
+                                            selectedPhoto = p
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selecting = true
+                                        selected = selected + p
+                                    },
+                                )
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context).data(photoModel(p)).size(360).crossfade(true).build(),
@@ -207,6 +294,21 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
                                         .padding(horizontal = 8.dp, vertical = 3.dp),
                                 )
                             }
+                            if (selecting) {
+                                val on = p in selected
+                                Box(
+                                    Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(6.dp)
+                                        .size(26.dp)
+                                        .clip(androidx.compose.foundation.shape.CircleShape)
+                                        .background(if (on) MaterialTheme.colorScheme.primary else Color(0x66000000))
+                                        .border(2.dp, Color.White, androidx.compose.foundation.shape.CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (on) Icon(Icons.Rounded.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                }
+                            }
                             if (Store.crops().containsKey(p)) {
                                 Icon(
                                     Icons.Rounded.Crop, contentDescription = "Cropped", tint = Color.White,
@@ -227,7 +329,7 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
         }
         if (list.isNotEmpty()) {
             Text(
-                "Tap a photo to crop, hide or remove it.",
+                "Tap a photo for options, or press Select (or hold a photo) to hide or remove several at once.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp),

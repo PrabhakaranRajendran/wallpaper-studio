@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
@@ -60,9 +61,9 @@ import com.prabhu.wallpaperstudio.wallpaper.LockWorker
 import kotlinx.coroutines.launch
 
 enum class AppTab(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Rounded.Home),
-    Wallpaper("Wallpaper", Icons.Rounded.Wallpaper),
-    Lock("Lock screen", Icons.Rounded.Lock),
+    Home("Status", Icons.Rounded.Dashboard),
+    Wallpaper("Home", Icons.Rounded.Home),
+    Lock("Lock", Icons.Rounded.Lock),
     Themes("Themes", Icons.Rounded.Palette),
     Settings("Settings", Icons.Rounded.Tune),
 }
@@ -90,10 +91,9 @@ class MainActivity : ComponentActivity() {
 private fun App(startTab: AppTab, startSub: Int) {
     var tab by rememberSaveable { mutableStateOf(startTab) }
     var wallpaperSub by rememberSaveable { mutableIntStateOf(if (startTab == AppTab.Wallpaper) startSub else 0) }
-    // Crop editor: key, source, isVideo, target
+    // Crop editor: key, source, target
     var cropKey by rememberSaveable { mutableStateOf<String?>(null) }
     var cropSource by rememberSaveable { mutableStateOf("") }
-    var cropVideo by rememberSaveable { mutableStateOf(false) }
     var cropTarget by rememberSaveable { mutableStateOf<String?>(null) }
     val snackHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -121,7 +121,7 @@ private fun App(startTab: AppTab, startSub: Int) {
             BackHandler { cropKey = null }
             Scaffold(snackbarHost = { SnackbarHost(snackHost) }) { pad ->
                 Box(Modifier.padding(pad)) {
-                    CropScreen(key = key, source = cropSource, isVideo = cropVideo, target = cropTarget, onClose = { cropKey = null })
+                    CropScreen(key = key, source = cropSource, target = cropTarget, onClose = { cropKey = null })
                 }
             }
             return@CompositionLocalProvider
@@ -139,7 +139,7 @@ private fun App(startTab: AppTab, startSub: Int) {
                                 tab = t
                             },
                             icon = { Icon(t.icon, contentDescription = null) },
-                            label = { Text(t.label, maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Visible) },
+                            label = { Text(t.label, maxLines = 1) },
                         )
                     }
                 }
@@ -155,17 +155,15 @@ private fun App(startTab: AppTab, startSub: Int) {
                     AppTab.Wallpaper -> WallpaperScreen(
                         subTab = wallpaperSub,
                         onSubTab = { wallpaperSub = it },
-                        onCrop = { k, src, video ->
+                        onCrop = { k, src ->
                             cropKey = k
                             cropSource = src
-                            cropVideo = video
-                            cropTarget = if (video) null else Target.HOME
+                            cropTarget = Target.HOME
                         },
                     )
                     AppTab.Lock -> LockScreenTab(onCrop = { p ->
                         cropKey = p
                         cropSource = p
-                        cropVideo = false
                         cropTarget = Target.LOCK
                     })
                     AppTab.Themes -> ThemesScreen()

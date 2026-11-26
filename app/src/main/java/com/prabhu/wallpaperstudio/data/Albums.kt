@@ -94,6 +94,17 @@ object Albums {
         PhotoLists.invalidate()
     }
 
+    /** Hides or shows many photos at once. */
+    fun setHiddenMany(target: String, photos: Collection<String>, hidden: Boolean) {
+        val list = Store.stringList(Keys.hidden(target))
+        Store.putStringList(Keys.hidden(target), if (hidden) (list + photos).distinct() else list - photos.toSet())
+        PhotoLists.invalidate()
+    }
+
+    fun removeMany(context: Context, target: String, photos: Collection<String>) {
+        photos.forEach { remove(context, target, it) }
+    }
+
     /** Folder name to show for a photo's source. */
     fun albumName(target: String) = if (target == Target.LOCK) LOCK_DIR else HOME_DIR
 }

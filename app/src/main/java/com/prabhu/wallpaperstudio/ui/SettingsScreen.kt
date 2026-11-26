@@ -83,30 +83,58 @@ fun SettingsScreen() {
 
         UpdateCard()
 
-        SectionLabel("What's active")
-        ActiveSummary()
-
-        SectionLabel("Wallpaper check")
-        WallpaperCheck()
-
-        SectionLabel("Battery")
-        SettingCard {
-            SwitchRow("Pause 3D in Battery Saver", "The gyro effect stops while Battery Saver is on", Store.bool(Keys.BAT_3D_SAVER, true)) { v ->
-                save(if (v) "3D pauses in Battery Saver" else "3D keeps running in Battery Saver") { Store.edit { putBoolean(Keys.BAT_3D_SAVER, v) } }
+        // 1. The master controls: pause everything, and when to stop automatically.
+        SectionLabel("Pause & battery")
+        val reason = Battery.stopReason(context)
+        StatusBanner(
+            ok = reason == null,
+            title = if (reason == null) "Running" else "Stopped: $reason",
+            detail = if (reason == null) "Photos change and the 3D effect works." else "Photos and the 3D effect are waiting.",
+        )
+        SettingCard(Modifier.padding(top = 10.dp)) {
+            SwitchRow(
+                "Pause everything",
+                "Stops photo changes (Home and Lock) and the 3D tilt, right now",
+                Store.paused(),
+            ) { v ->
+                save(if (v) "Paused: nothing changes, 3D is off" else "Running again") { Store.edit { putBoolean(Keys.PAUSED, v) } }
             }
-            SwitchRow("Pause 3D below 20% battery", "Unless the phone is charging", Store.bool(Keys.BAT_3D_LOW, true)) { v ->
-                save(if (v) "3D pauses below 20%" else "3D keeps running below 20%") { Store.edit { putBoolean(Keys.BAT_3D_LOW, v) } }
+            SwitchRow(
+                "Stop when the battery is low",
+                if (Store.bool(Keys.BAT_STOP_ON, true)) "Stops at ${Store.int(Keys.BAT_STOP_LEVEL, 20)}% or less (not while charging)" else "Off",
+                Store.bool(Keys.BAT_STOP_ON, true),
+            ) { v ->
+                save(if (v) "Stops at ${Store.int(Keys.BAT_STOP_LEVEL, 20)}% battery" else "Keeps running on low battery") { Store.edit { putBoolean(Keys.BAT_STOP_ON, v) } }
             }
-            SwitchRow("Freeze video in Battery Saver", "Shows a still frame instead of playing", Store.bool(Keys.BAT_VIDEO_SAVER, true)) { v ->
-                save(if (v) "Video freezes in Battery Saver" else "Video keeps playing in Battery Saver") { Store.edit { putBoolean(Keys.BAT_VIDEO_SAVER, v) } }
+            if (Store.bool(Keys.BAT_STOP_ON, true)) {
+                ChoiceRow(
+                    "Stop at",
+                    listOf("10" to "10%", "15" to "15%", "20" to "20%", "30" to "30%", "40" to "40%"),
+                    Store.int(Keys.BAT_STOP_LEVEL, 20).toString(),
+                ) { v ->
+                    save("Stops at $v% battery") { Store.edit { putInt(Keys.BAT_STOP_LEVEL, v.toInt()) } }
+                }
+            }
+            SwitchRow(
+                "Stop in Battery Saver",
+                "Nothing changes while Android Battery Saver is on",
+                Store.bool(Keys.BAT_SAVER_STOP, true),
+            ) { v ->
+                save(if (v) "Stops in Battery Saver" else "Keeps running in Battery Saver") { Store.edit { putBoolean(Keys.BAT_SAVER_STOP, v) } }
             }
             Text(
-                "Everything stops when the screen is off or an app covers the wallpaper.",
+                "Always on: when you lock the phone or an app covers the wallpaper, the timers and the 3D sensor are switched off.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 6.dp),
             )
         }
+
+        SectionLabel("What's active")
+        ActiveSummary()
+
+        SectionLabel("Wallpaper check")
+        WallpaperCheck()
 
         SectionLabel("App updates")
         SettingCard {
@@ -242,17 +270,15 @@ private fun ActiveSummary() {
         Text("Home screen", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
         SummaryLine("Showing", when (home) {
             "photos" -> "Photos ($homeCount)"
-            "video" -> "Video"
             else -> "Not set"
         })
         if (home == "photos") SummaryLine("Changes", "every ${intervalLabel(Store.interval(Target.HOME))}")
         SummaryLine("3D effect", if (Store.gyroOn()) "On" else "Off")
-        SummaryLine("Widgets", Widgets.load().filter { it.on }.joinToString { Widgets.label(it.type) }.ifEmpty { "None" })
+        SummaryLine("Clock & widgets", Widgets.load().filter { it.on }.joinToString { Widgets.label(it.type) }.ifEmpty { "None" })
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(vertical = 8.dp))
         Text("Lock screen", style = MaterialTheme.typography.titleSmall)
         SummaryLine("Showing", when (lock) {
             "slideshow" -> "Slideshow ($lockCount photos)"
-            "photos", "video" -> "Same as Home"
             else -> if (Store.lockMode() == "slideshow") "Slideshow (not started)" else "Not set"
         })
         if (Store.lockMode() == "slideshow") {
@@ -264,7 +290,7 @@ private fun ActiveSummary() {
             "dark" -> "Dark"
             else -> "Same as phone"
         })
-        SummaryLine("Paused", if (Store.paused()) "Yes" else "No")
+        SummaryLine("Paused", Battery.stopReason(LocalContext.current) ?: "No")
         Box(Modifier.size(6.dp))
     }
 }

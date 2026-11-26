@@ -63,6 +63,7 @@ import com.prabhu.wallpaperstudio.data.Weather
 import com.prabhu.wallpaperstudio.data.WidgetDataSource
 import com.prabhu.wallpaperstudio.data.WidgetItem
 import com.prabhu.wallpaperstudio.data.Widgets
+import com.prabhu.wallpaperstudio.render.LockChanger
 import com.prabhu.wallpaperstudio.render.PhotoMath
 import com.prabhu.wallpaperstudio.render.WidgetRenderer
 import kotlinx.coroutines.Dispatchers
@@ -71,32 +72,35 @@ import kotlinx.coroutines.withContext
 
 /** Clock, date, battery, weather, your text and next event – each with font, colour, size and position. */
 @Composable
-fun WidgetsEditor() {
+fun WidgetsEditor(target: String = Target.HOME) {
     val context = LocalContext.current
     val save = rememberSaver()
     Store.tick.intValue
-    val items = Widgets.load()
+    val items = Widgets.load(target)
+    val lockSide = target == Target.LOCK
     val screen = remember { PhotoMath.screenSize(context) }
 
-    // Background for the preview: the current Home photo, or the video's first frame.
+    // Background for the preview: the photo that is showing right now.
     var background by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(Store.homeSource()) {
+    LaunchedEffect(target, Store.tick.intValue) {
         background = withContext(Dispatchers.IO) {
             try {
-                if (Store.homeSource() == "video") {
-                    Store.prefs.getString(Keys.VIDEO_PATH, null)?.let { videoFrame(it) }
-                } else {
-                    PhotoLists.current(context, Target.HOME)?.let { PhotoMath.decode(context, it, 1200) }
-                }
+                PhotoLists.current(context, target)?.let { PhotoMath.decode(context, it, 1200) }
             } catch (e: Exception) {
                 null
             }
         }
     }
+    val scope = rememberCoroutineScope()
+    val snack = LocalSnack.current
 
     Column {
         Text(
-            "Shown on your Home screen wallpaper. The lock screen keeps your phone's own clock.",
+            if (lockSide) {
+                "Your text and the date are drawn onto the lock screen picture. Your phone's own clock stays where Android puts it (the faint clock in the preview), so keep the text clear of it."
+            } else {
+                "Shown on your Home screen wallpaper."
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -120,6 +124,15 @@ fun WidgetsEditor() {
                         PhotoMath.place(m, bg.width, bg.height, size.width, size.height, null, "fill")
                         nc.drawBitmap(bg, m, paint)
                     }
+                    if (lockSide) {
+                        // Ghost of the phone's own lock clock, so you can see what to avoid.
+                        val ghost = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color = 0x66FFFFFF
+                            textSize = size.width * 0.2f
+                            textAlign = Paint.Align.CENTER
+                        }
+                        nc.drawText("9:41", size.width / 2f, size.height * 0.2f, ghost)
+                    }
                     WidgetRenderer.draw(
                         nc, size.width.toInt(), size.height.toInt(), items,
                         WidgetDataSource.read(context), Store.bool(Keys.WIDGET_SHADOW, true), preview = true,
@@ -134,12 +147,32 @@ fun WidgetsEditor() {
             }
         }
 
-        items.forEach { item -> WidgetCard(item) }
+        if (lockSide) {
+            PressButton(
+                "Apply to lock screen now",
+                onClick = {
+                    LockChanger.reapplyAsync(context) { ok ->
+                        scope.launch { snack(if (ok) "Lock screen updated" else "Add photos to the lock album first") }
+                    }
+                },
+                style = BtnStyle.Brand,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            Text(
+                "Changes show on the lock screen after you press Apply, or the next time the photo changes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
+        items.forEach { item -> WidgetCard(item, target) }
     }
 }
 
 @Composable
-private fun WidgetCard(item: WidgetItem) {
+private fun WidgetCard(item: WidgetItem, target: String) {
+    val upd = { w: WidgetItem -> Widgets.update(w, target) }
     val context = LocalContext.current
     val save = rememberSaver()
     val snack = LocalSnack.current
@@ -148,7 +181,7 @@ private fun WidgetCard(item: WidgetItem) {
         if (granted) {
             scope.launch {
                 withContext(Dispatchers.IO) { CalendarSource.refresh(context, force = true) }
-                save("Next calendar event on") { Widgets.update(item.copy(on = true)) }
+                save("Next calendar event on") { upd(item.copy(on = true)) }
             }
         } else {
             snack("Calendar permission is needed for this widget")
@@ -169,7 +202,7 @@ private fun WidgetCard(item: WidgetItem) {
                 if (v && item.type == "event" && !CalendarSource.hasPermission(context)) {
                     calendarPermission.launch(Manifest.permission.READ_CALENDAR)
                 } else {
-                    save(if (v) "$name on" else "$name off") { Widgets.update(item.copy(on = v)) }
+                    save(if (v) "$name on" else "$name off") { upd(item.copy(on = v)) }
                     if (v && item.type == "event") scope.launch(Dispatchers.IO) { CalendarSource.refresh(context, force = true) }
                 }
             }
@@ -178,12 +211,12 @@ private fun WidgetCard(item: WidgetItem) {
             when (item.type) {
                 "clock" -> {
                     ChoiceRow("Style", listOf("big" to "One line", "stacked" to "Stacked"), item.style.ifEmpty { "big" }) { v ->
-                        save("Clock style saved") { Widgets.update(item.copy(style = v)) }
+                        save("Clock style saved") { upd(item.copy(style = v)) }
                     }
-                    SwitchRow("24-hour clock", null, item.h24) { v -> save(if (v) "24-hour clock" else "12-hour clock") { Widgets.update(item.copy(h24 = v)) } }
+                    SwitchRow("24-hour clock", null, item.h24) { v -> save(if (v) "24-hour clock" else "12-hour clock") { upd(item.copy(h24 = v)) } }
                 }
                 "date" -> ChoiceRow("Format", listOf("short" to "Thu, 26 Nov", "long" to "Thursday…", "numeric" to "26/11/2026"), item.style.ifEmpty { "short" }) { v ->
-                    save("Date format saved") { Widgets.update(item.copy(style = v)) }
+                    save("Date format saved") { upd(item.copy(style = v)) }
                 }
                 "text" -> {
                     var text by remember(item.type) { mutableStateOf(item.text) }
@@ -191,7 +224,7 @@ private fun WidgetCard(item: WidgetItem) {
                         value = text,
                         onValueChange = {
                             text = it.take(80)
-                            Widgets.update(item.copy(text = text))
+                            upd(item.copy(text = text))
                         },
                         label = { Text("Your text") },
                         modifier = Modifier
@@ -242,7 +275,7 @@ private fun WidgetCard(item: WidgetItem) {
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
                             .border(if (selected) 2.dp else 0.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
-                            .clickable { save("Font: $label") { Widgets.update(item.copy(font = id)) } }
+                            .clickable { save("Font: $label") { upd(item.copy(font = id)) } }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     ) {
                         Text(
@@ -266,7 +299,7 @@ private fun WidgetCard(item: WidgetItem) {
                             .clip(CircleShape)
                             .background(Color(c))
                             .border(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
-                            .clickable { save("Colour saved") { Widgets.update(item.copy(color = c)) } },
+                            .clickable { save("Colour saved") { upd(item.copy(color = c)) } },
                         contentAlignment = Alignment.Center,
                     ) {
                         if (selected) Icon(Icons.Rounded.Check, null, tint = if (c == 0xFFFFFFFF.toInt()) Color.Black else Color.White, modifier = Modifier.size(18.dp))
@@ -279,20 +312,20 @@ private fun WidgetCard(item: WidgetItem) {
                 value = hue,
                 onValueChange = {
                     hue = it
-                    Widgets.update(item.copy(color = Color.hsv(it, 0.65f, 1f).toArgb()))
+                    upd(item.copy(color = Color.hsv(it, 0.65f, 1f).toArgb()))
                 },
                 onValueChangeFinished = { save("Colour saved") {} },
                 valueRange = 0f..359f,
             )
 
             SliderRow("Size", "${(item.size * 100).toInt()}%", item.size, 0.5f..2f, onChange = { v ->
-                Widgets.update(item.copy(size = v))
+                upd(item.copy(size = v))
             }, onDone = { save("Size saved") {} })
             SliderRow("Position (top ↔ bottom)", "${(item.y * 100).toInt()}%", item.y, 0.04f..0.96f, onChange = { v ->
-                Widgets.update(item.copy(y = v))
+                upd(item.copy(y = v))
             }, onDone = { save("Position saved") {} })
             ChoiceRow("Align", listOf("left" to "Left", "center" to "Centre", "right" to "Right"), item.align) { v ->
-                save("Alignment saved") { Widgets.update(item.copy(align = v)) }
+                save("Alignment saved") { upd(item.copy(align = v)) }
             }
         }
     }

@@ -1,6 +1,5 @@
 package com.prabhu.wallpaperstudio.ui
 
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -33,7 +32,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -72,26 +71,22 @@ import com.prabhu.wallpaperstudio.data.PhotoLists
 import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.data.Target
 import com.prabhu.wallpaperstudio.data.Widgets
-import com.prabhu.wallpaperstudio.video.VideoOptimizer
 import com.prabhu.wallpaperstudio.wallpaper.GyroTracker
-import com.prabhu.wallpaperstudio.wallpaper.VideoRenderer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /** Everything about the Home screen wallpaper. */
+/** Everything about the Home screen wallpaper. */
 @Composable
-fun WallpaperScreen(subTab: Int, onSubTab: (Int) -> Unit, onCrop: (key: String, source: String, video: Boolean) -> Unit) {
+fun WallpaperScreen(subTab: Int, onSubTab: (Int) -> Unit, onCrop: (key: String, source: String) -> Unit) {
     val context = LocalContext.current
     Store.tick.intValue
     resumeTick()
-    val save = rememberSaver()
     val snack = LocalSnack.current
     var confirmApply by remember { mutableStateOf(false) }
-    val source = Store.homeSource()
-    val status = screenStatus(context, lock = false)
-    val applied = status == source
+    val applied = screenStatus(context, lock = false) == "photos"
+    val count = remember(Store.tick.intValue) { PhotoLists.get(context, Target.HOME).size }
 
     Column(
         Modifier
@@ -99,106 +94,63 @@ fun WallpaperScreen(subTab: Int, onSubTab: (Int) -> Unit, onCrop: (key: String, 
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
     ) {
-        ScreenTitle("Home screen wallpaper", "What shows behind your apps")
+        ScreenTitle("Home screen", "The wallpaper behind your apps")
 
-        // What you've chosen, at a glance.
-        SettingCard {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
-                Icon(
-                    if (applied) Icons.Rounded.CheckCircle else Icons.Rounded.Wallpaper,
-                    null,
-                    tint = if (applied) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    if (applied) "On your Home screen now" else "Not on your Home screen yet",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 10.dp),
-                )
-            }
-            ChoiceRow("Show", listOf("photos" to "Photos", "video" to "Video"), source) { v ->
-                save(if (v == "video") "Home screen will show your video" else "Home screen will show photos") {
-                    Store.edit { putString(Keys.HOME_SOURCE, v) }
+        StatusBanner(
+            ok = applied,
+            title = if (applied) "Wallpaper Studio is on your Home screen" else "Not on your Home screen yet",
+            detail = if (applied) "Everything below applies straight away." else "Press Apply once. After that, changes show straight away.",
+            action = if (applied) null else "Apply",
+            onAction = {
+                if (count == 0) {
+                    snack("Add photos first")
+                    onSubTab(0)
+                } else {
+                    confirmApply = true
                 }
-                onSubTab(if (v == "video") 1 else 0)
-            }
-            val count = remember(Store.tick.intValue) { PhotoLists.get(context, Target.HOME).size }
-            if (source == "photos") {
-                SummaryLine("Photos", "$count")
-                SummaryLine("Changes", "every ${intervalLabel(Store.interval(Target.HOME))}" + if (Store.bool(Keys.HOME_ON_UNLOCK, false)) " + unlock" else "")
-                SummaryLine("Order · transition", "${if (Store.order(Target.HOME) == "shuffle") "Shuffle" else "In order"} · ${Store.transition().replaceFirstChar { it.uppercase() }}")
-            } else {
-                val path = Store.prefs.getString(Keys.VIDEO_PATH, null)
-                SummaryLine("Video", if (path != null && File(path).exists()) "Ready" else "Not chosen yet")
-                SummaryLine("Sound · fit", "${if (Store.bool(Keys.VIDEO_SOUND, false)) "On" else "Muted"} · ${if (Store.string(Keys.VIDEO_FIT, "fill") == "fit") "Fit" else "Fill"}")
-            }
+            },
+        )
+
+        SettingCard(Modifier.padding(top = 10.dp)) {
+            SummaryLine("Photos", "$count")
+            SummaryLine("Changes", "every ${intervalLabel(Store.interval(Target.HOME))}" + if (Store.bool(Keys.HOME_ON_UNLOCK, false)) " + unlock" else "")
             SummaryLine("3D effect", if (Store.gyroOn()) "On" else "Off")
             val on = Widgets.load().filter { it.on }.joinToString { Widgets.label(it.type) }
-            SummaryLine("Widgets", on.ifEmpty { "None" })
-            PressButton(
-                if (applied) "Applied ✓  Apply again" else "Apply to Home screen",
-                onClick = {
-                    if (source == "video" && Store.prefs.getString(Keys.VIDEO_PATH, null) == null) {
-                        snack("Choose a video first (Video tab)")
-                        onSubTab(1)
-                    } else if (source == "photos" && count == 0) {
-                        snack("Add photos first")
-                        onSubTab(0)
-                    } else {
-                        confirmApply = true
-                    }
-                },
-                style = BtnStyle.Brand,
-                icon = Icons.Rounded.Wallpaper,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp, bottom = 6.dp),
-            )
-            Text(
-                "Changes you make below are used straight away. Apply is only needed once, or to switch between photos and video.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 6.dp),
-            )
+            SummaryLine("Clock & widgets", on.ifEmpty { "None" })
         }
 
-        ScrollableTabRow(
-            selectedTabIndex = subTab.coerceIn(0, 3),
-            edgePadding = 0.dp,
+        TabRow(
+            selectedTabIndex = subTab.coerceIn(0, 2),
             containerColor = Color.Transparent,
-            modifier = Modifier.padding(top = 12.dp),
+            modifier = Modifier.padding(top = 14.dp),
         ) {
-            listOf("Photos", "Video", "3D effect", "Widgets").forEachIndexed { i, t ->
-                Tab(selected = subTab == i, onClick = { onSubTab(i) }, text = { Text(t) })
+            listOf("Photos", "3D effect", "Widgets").forEachIndexed { i, t ->
+                Tab(selected = subTab == i, onClick = { onSubTab(i) }, text = { Text(t, maxLines = 1) })
             }
         }
         Box(Modifier.padding(top = 14.dp, bottom = 32.dp)) {
             when (subTab) {
-                0 -> HomePhotos(onCrop = { onCrop(it, it, false) })
-                1 -> VideoSection(onCrop = { path -> onCrop(VideoRenderer.VIDEO_CROP_KEY, path, true) })
-                2 -> ThreeDSection()
-                else -> WidgetsEditor()
+                0 -> HomePhotos(onCrop = { onCrop(it, it) })
+                1 -> ThreeDSection()
+                else -> WidgetsEditor(Target.HOME)
             }
         }
     }
 
     if (confirmApply) {
-        val both = Store.lockMode() == "same"
         ConfirmDialog(
             title = "Apply to Home screen",
-            message = "Android will now show a preview of your " + (if (source == "video") "video" else "photo") +
-                " wallpaper.\n\nTap \"Apply to\" (or \"Set wallpaper\"), then choose \"" +
-                (if (both) "Home and lock screens" else "Home screen") + "\".",
+            message = "Android will show a preview of your wallpaper.\n\nTap \"Set wallpaper\" (or \"Apply to\"), then choose \"Home screen\". Your lock screen is set separately, in the Lock tab.",
             confirm = "Continue",
             onConfirm = {
                 confirmApply = false
-                if (!applyWallpaper(context, video = source == "video")) {
-                    snack("Already on your Home screen. Changes show straight away.")
-                }
+                if (!applyWallpaper(context)) snack("Already on your Home screen")
             },
             onDismiss = { confirmApply = false },
         )
     }
 }
+
 
 @Composable
 private fun HomePhotos(onCrop: (String) -> Unit) {
@@ -262,232 +214,6 @@ fun CustomIntervalDialog(current: Int, allowZero: Boolean, onSave: (Int) -> Unit
     )
 }
 
-// ---------------- Video ----------------
-
-private data class VideoInfo(val durationMs: Long, val width: Int, val height: Int)
-
-@Composable
-private fun VideoSection(onCrop: (String) -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val save = rememberSaver()
-    val snack = LocalSnack.current
-    val confirmTap = rememberConfirmTap()
-    val current = Store.prefs.getString(Keys.VIDEO_PATH, null)?.takeIf { File(it).exists() }
-    var newUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var info by remember { mutableStateOf<VideoInfo?>(null) }
-    var start by rememberSaveable { mutableFloatStateOf(0f) }
-    var end by rememberSaveable { mutableFloatStateOf(0f) }
-    var quality by rememberSaveable { mutableIntStateOf(1080) }
-    var fps by rememberSaveable { mutableIntStateOf(30) }
-    var progress by remember { mutableStateOf<Int?>(null) }
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) {
-            newUri = uri.toString()
-            start = 0f
-            end = 0f
-        }
-    }
-    LaunchedEffect(newUri) {
-        val u = newUri ?: return@LaunchedEffect
-        info = withContext(Dispatchers.IO) { readInfo(context, Uri.parse(u)) }
-        val d = info?.durationMs ?: 0L
-        if (end <= 0f && d > 0) end = minOf(d, 30_000L).toFloat()
-    }
-
-    Column {
-        val nu = newUri
-        if (nu == null) {
-            if (current != null) {
-                Text("Your video", style = MaterialTheme.typography.titleMedium)
-                VideoPreview(current, 0L, Modifier.padding(top = 8.dp))
-                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PressButton("Crop & zoom", onClick = { onCrop(current) }, icon = Icons.Rounded.Crop, style = BtnStyle.Tonal, height = 46, modifier = Modifier.weight(1f))
-                    PressButton("New video", onClick = {
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                    }, icon = Icons.Rounded.FileUpload, style = BtnStyle.Outline, height = 46, modifier = Modifier.weight(1f))
-                }
-                SettingCard(Modifier.padding(top = 12.dp)) {
-                    SwitchRow(
-                        if (Store.bool(Keys.VIDEO_SOUND, false)) "Sound on" else "Sound off",
-                        "Plays whenever your Home screen shows. Videos optimized without sound stay silent.",
-                        Store.bool(Keys.VIDEO_SOUND, false),
-                    ) { v -> save(if (v) "Video sound on" else "Video muted") { Store.edit { putBoolean(Keys.VIDEO_SOUND, v) } } }
-                    ChoiceRow("Fit", listOf("fill" to "Fill screen", "fit" to "Show whole video"), Store.string(Keys.VIDEO_FIT, "fill")) { v ->
-                        save(if (v == "fit") "Video: show the whole video" else "Video: fill the screen") { Store.edit { putString(Keys.VIDEO_FIT, v) } }
-                    }
-                    Text(
-                        "Portrait and landscape videos are both turned upright automatically. Use Crop & zoom to pick exactly which part shows.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 6.dp),
-                    )
-                }
-            } else {
-                Text(
-                    "Pick any video. It's trimmed and resized for your screen so it plays smoothly and saves battery.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                PressButton(
-                    "Choose a video",
-                    onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
-                    icon = Icons.Rounded.FileUpload,
-                    style = BtnStyle.Brand,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                )
-            }
-            return@Column
-        }
-
-        Text("New video", style = MaterialTheme.typography.titleMedium)
-        VideoPreview(nu, start.toLong(), Modifier.padding(top = 8.dp))
-        val i = info
-        if (i != null) {
-            Text(
-                "${i.width} × ${i.height} · ${formatMs(i.durationMs)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            if (i.durationMs > 1000) {
-                SummaryLine("Trim loop", "${formatMs(start.toLong())} – ${formatMs(end.toLong())} · ${((end - start) / 1000).toInt()} s")
-                RangeSlider(
-                    value = start..end.coerceAtLeast(start),
-                    onValueChange = { r ->
-                        start = r.start
-                        end = r.endInclusive.coerceAtLeast(r.start + 1000f).coerceAtMost(i.durationMs.toFloat())
-                    },
-                    valueRange = 0f..i.durationMs.toFloat(),
-                )
-            }
-        }
-        SettingCard(Modifier.padding(top = 8.dp)) {
-            ChoiceRow("Quality", listOf("0" to "Screen", "1080" to "1080p", "720" to "720p"), quality.toString()) { quality = it.toInt() }
-            ChoiceRow("Frame rate", listOf("24" to "24", "30" to "30", "60" to "60", "0" to "Original"), fps.toString()) { fps = it.toInt() }
-            Text(
-                "1080p at 30 frames a second is the battery-friendly choice.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 6.dp),
-            )
-        }
-        val p = progress
-        if (p != null) {
-            Text("Optimizing… $p%", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-            LinearProgressIndicator(progress = { p / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-        }
-        Row(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PressButton("Cancel", onClick = { newUri = null }, style = BtnStyle.Outline, enabled = p == null, modifier = Modifier.weight(1f))
-            PressButton(
-                "Optimize & use",
-                enabled = p == null && i != null,
-                style = BtnStyle.Brand,
-                modifier = Modifier.weight(1.6f),
-                onClick = {
-                    val vi = i ?: return@PressButton
-                    progress = 0
-                    scope.launch {
-                        try {
-                            val out = VideoOptimizer.optimize(
-                                context,
-                                VideoOptimizer.Options(
-                                    uri = Uri.parse(nu),
-                                    startMs = start.toLong(),
-                                    endMs = (if (end > start) end else vi.durationMs.toFloat()).toLong(),
-                                    shortSide = quality,
-                                    fps = fps,
-                                    fill = true,
-                                    sound = Store.bool(Keys.VIDEO_SOUND, false),
-                                ),
-                            ) { progress = it }
-                            val old = Store.prefs.getString(Keys.VIDEO_PATH, null)
-                            Store.edit {
-                                putString(Keys.VIDEO_PATH, out.absolutePath)
-                                putString(Keys.HOME_SOURCE, "video")
-                            }
-                            Store.putCrop(VideoRenderer.VIDEO_CROP_KEY, null)
-                            if (old != null && old != out.absolutePath) File(old).delete()
-                            newUri = null
-                            confirmTap()
-                            snack("Video ready. Tap Apply to Home screen above if it isn't showing yet.")
-                        } catch (e: Exception) {
-                            snack("Couldn't optimize this video: ${e.message}")
-                        } finally {
-                            progress = null
-                        }
-                    }
-                },
-            )
-        }
-    }
-}
-
-@OptIn(UnstableApi::class)
-@Composable
-private fun VideoPreview(uri: String, seekMs: Long, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val player = remember(uri) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(if (uri.startsWith("/")) MediaItem.fromUri(Uri.fromFile(File(uri))) else MediaItem.fromUri(uri))
-            repeatMode = Player.REPEAT_MODE_ONE
-            volume = 0f
-            prepare()
-            playWhenReady = true
-        }
-    }
-    DisposableEffect(player) { onDispose { player.release() } }
-    LaunchedEffect(seekMs) { player.seekTo(seekMs) }
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(220.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .background(Color.Black)
-    ) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    this.player = player
-                }
-            },
-            update = { it.player = player },
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
-
-private fun readInfo(context: android.content.Context, uri: Uri): VideoInfo? {
-    val r = MediaMetadataRetriever()
-    return try {
-        r.setDataSource(context, uri)
-        val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-        var w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
-        var h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
-        val rot = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
-        if (rot % 180 != 0) {
-            val t = w; w = h; h = t
-        }
-        VideoInfo(d, w, h)
-    } catch (e: Exception) {
-        null
-    } finally {
-        try {
-            r.release()
-        } catch (_: Exception) {
-        }
-    }
-}
-
-private fun formatMs(ms: Long): String {
-    val s = ms / 1000
-    return "%d:%02d".format(s / 60, s % 60)
-}
 
 // ---------------- 3D ----------------
 
@@ -572,7 +298,7 @@ private fun ThreeDSection() {
             )
         }
         SettingCard(Modifier.padding(top = 12.dp)) {
-            SwitchRow("3D gyro effect", "Works with photos and video. Stops when the screen is off.", on) { v ->
+            SwitchRow("3D gyro effect", "Stops when the screen is off or when you pause everything.", on) { v ->
                 save(if (v) "3D effect on" else "3D effect off") { Store.edit { putBoolean(Keys.GYRO, v) } }
             }
             SliderRow("Depth", levelLabel(intensity), intensity, 0f..1f, onChange = { v ->

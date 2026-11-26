@@ -11,6 +11,8 @@ import com.prabhu.wallpaperstudio.data.Keys
 import com.prabhu.wallpaperstudio.data.PhotoLists
 import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.data.Target
+import com.prabhu.wallpaperstudio.data.WidgetDataSource
+import com.prabhu.wallpaperstudio.data.Widgets
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -41,6 +43,26 @@ object LockChanger {
             } finally {
                 busy.set(false)
             }
+        }
+    }
+
+    /** Draws the current lock photo again (after the lock text or date changed). */
+    fun reapplyAsync(context: Context, done: (Boolean) -> Unit = {}) {
+        val app = context.applicationContext
+        executor.execute {
+            val photo = Store.prefs.getString(Keys.LOCK_LAST_PHOTO, null)
+            val ok = try {
+                if (photo != null) {
+                    setPhoto(app, photo)
+                    true
+                } else {
+                    change(app, "applied")
+                }
+            } catch (e: Throwable) {
+                Store.log("Lock screen: couldn't apply (${e.message ?: e.javaClass.simpleName})")
+                false
+            }
+            done(ok)
         }
     }
 
@@ -106,6 +128,10 @@ object LockChanger {
         PhotoMath.place(m, src.width, src.height, w.toFloat(), h.toFloat(), crop, fit)
         canvas.drawBitmap(src, m, paint)
         src.recycle()
+        val items = Widgets.load(Target.LOCK)
+        if (items.any { it.on }) {
+            WidgetRenderer.draw(canvas, w, h, items, WidgetDataSource.read(context), Store.bool(Keys.WIDGET_SHADOW, true))
+        }
         WallpaperManager.getInstance(context).setBitmap(out, null, true, WallpaperManager.FLAG_LOCK)
         out.recycle()
     }

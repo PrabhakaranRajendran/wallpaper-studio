@@ -25,7 +25,6 @@ object DebugSetup {
         }
         if (intent.getBooleanExtra("demo", false)) {
             Store.edit {
-                putString(Keys.HOME_SOURCE, "photos")
                 putInt(Keys.interval(Target.HOME), 1)
                 putString(Keys.LOCK_MODE, "slideshow")
                 putInt(Keys.interval(Target.LOCK), 0)
@@ -40,13 +39,16 @@ object DebugSetup {
                     }
                 }
             )
+            Widgets.save(
+                Widgets.defaults(Target.LOCK).map {
+                    when (it.type) {
+                        "date" -> it.copy(on = true)
+                        else -> it.copy(on = true, text = "Lock text")
+                    }
+                },
+                Target.LOCK,
+            )
             PhotoLists.invalidate()
-        }
-        intent.getStringExtra("video")?.let { path ->
-            Store.edit {
-                putString(Keys.VIDEO_PATH, path)
-                putString(Keys.HOME_SOURCE, "video")
-            }
         }
         intent.getStringExtra("palette")?.let { p -> Store.edit { putString(Keys.PALETTE, p) } }
         intent.getStringExtra("mode")?.let { m -> Store.edit { putString(Keys.THEME, m) } }

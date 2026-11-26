@@ -16,7 +16,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** One item drawn on the Home screen wallpaper. */
+/** One item drawn on the Home screen wallpaper (or on the lock screen picture). */
 data class WidgetItem(
     val type: String,          // clock | date | battery | weather | text | event
     val on: Boolean,
@@ -53,6 +53,9 @@ data class WidgetItem(
 object Widgets {
     val TYPES = listOf("clock", "date", "battery", "weather", "text", "event")
 
+    /** The lock screen picture is a still image, so only things that don't go stale are offered there. */
+    fun typesFor(target: String) = if (target == Target.LOCK) listOf("date", "text") else TYPES
+
     fun label(type: String) = when (type) {
         "clock" -> "Clock"
         "date" -> "Date"
@@ -63,7 +66,15 @@ object Widgets {
         else -> type
     }
 
-    fun defaults(): List<WidgetItem> = listOf(
+    fun defaults(target: String = Target.HOME): List<WidgetItem> =
+        (if (target == Target.LOCK) lockDefaults() else homeDefaults())
+
+    private fun lockDefaults(): List<WidgetItem> = listOf(
+        WidgetItem("date", on = false, font = "regular", size = 1f, y = 0.60f, style = "long"),
+        WidgetItem("text", on = false, font = "script", size = 1.2f, y = 0.72f, text = "Have a great day"),
+    )
+
+    private fun homeDefaults(): List<WidgetItem> = listOf(
         WidgetItem("clock", on = false, font = "thin", size = 1f, y = 0.16f, style = "big"),
         WidgetItem("date", on = false, font = "regular", size = 1f, y = 0.27f, style = "short"),
         WidgetItem("battery", on = false, font = "medium", size = 1f, y = 0.92f),
@@ -72,26 +83,27 @@ object Widgets {
         WidgetItem("event", on = false, font = "regular", size = 1f, y = 0.35f),
     )
 
-    fun load(): List<WidgetItem> {
-        val raw = Store.prefs.getString(Keys.WIDGETS, null) ?: return defaults()
+    fun load(target: String = Target.HOME): List<WidgetItem> {
+        val raw = Store.prefs.getString(Keys.widgets(target), null) ?: return defaults(target)
         return try {
             val arr = JSONArray(raw)
             val saved = List(arr.length()) { WidgetItem.fromJson(arr.getJSONObject(it)) }.associateBy { it.type }
-            defaults().map { saved[it.type] ?: it }
+            defaults(target).map { saved[it.type] ?: it }
         } catch (e: Exception) {
-            defaults()
+            defaults(target)
         }
     }
 
-    fun save(items: List<WidgetItem>) {
+    fun save(items: List<WidgetItem>, target: String = Target.HOME) {
         val arr = JSONArray()
         items.forEach { arr.put(it.toJson()) }
-        Store.edit { putString(Keys.WIDGETS, arr.toString()) }
+        Store.edit { putString(Keys.widgets(target), arr.toString()) }
     }
 
-    fun update(item: WidgetItem) = save(load().map { if (it.type == item.type) item else it })
+    fun update(item: WidgetItem, target: String = Target.HOME) =
+        save(load(target).map { if (it.type == item.type) item else it }, target)
 
-    fun anyOn() = load().any { it.on }
+    fun anyOn(target: String = Target.HOME) = load(target).any { it.on }
 
     val FONTS = listOf(
         "thin" to "Thin", "light" to "Light", "regular" to "Regular", "medium" to "Medium",

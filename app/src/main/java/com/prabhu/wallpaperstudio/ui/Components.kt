@@ -1,5 +1,8 @@
 package com.prabhu.wallpaperstudio.ui
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.CheckCircle
 import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
@@ -67,7 +70,6 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.prabhu.wallpaperstudio.data.Keys
 import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.wallpaper.PhotoWallpaperService
-import com.prabhu.wallpaperstudio.wallpaper.VideoWallpaperService
 import java.io.File
 
 // ---------------- pop-ups and feedback ----------------
@@ -444,34 +446,29 @@ fun intervalLabel(min: Int): String = when {
 fun photoModel(photo: String): Any = if (photo.startsWith("/")) File(photo) else photo
 
 /**
- * What a screen is showing: "photos", "video", "slideshow" (lock only) or null.
- * The wallpapers report this themselves, which is more reliable than asking the system on some phones.
+ * What a screen is showing: "photos" (our live wallpaper), "slideshow" (lock only) or null.
+ * The wallpaper reports this itself, which is more reliable than asking the system on some phones.
  */
 fun screenStatus(context: Context, lock: Boolean): String? {
     if (lock && Store.lockMode() == "slideshow" && Store.long(Keys.last(com.prabhu.wallpaperstudio.data.Target.LOCK), 0L) > 0L) {
         return "slideshow"
     }
-    val video = Store.bool(if (lock) Keys.ACTIVE_VIDEO_LOCK else Keys.ACTIVE_VIDEO_HOME, false)
-    val photos = Store.bool(if (lock) Keys.ACTIVE_PHOTO_LOCK else Keys.ACTIVE_PHOTO_HOME, false)
-    if (!video && !photos) return null
+    if (lock) return null
+    if (!Store.bool(Keys.ACTIVE_PHOTO_HOME, false)) return null
     val info = try {
-        val wm = WallpaperManager.getInstance(context)
-        if (lock && Build.VERSION.SDK_INT >= 34) wm.getWallpaperInfo(WallpaperManager.FLAG_LOCK) else if (!lock) wm.wallpaperInfo else null
+        WallpaperManager.getInstance(context).wallpaperInfo
     } catch (e: Exception) {
         null
     }
     if (info != null && info.packageName != context.packageName) return null
-    if (info != null) return if (info.serviceName == VideoWallpaperService::class.java.name) "video" else "photos"
-    return if (video) "video" else "photos"
+    return "photos"
 }
 
-/** Opens Android's "Set wallpaper" screen for our photo or video wallpaper. */
-fun applyWallpaper(context: Context, video: Boolean): Boolean {
-    val service = if (video) VideoWallpaperService::class.java else PhotoWallpaperService::class.java
-    val want = if (video) "video" else "photos"
-    if (screenStatus(context, lock = false) == want) return false
+/** Opens Android's "Set wallpaper" screen for our live photo wallpaper. Returns false if it is already set. */
+fun applyWallpaper(context: Context): Boolean {
+    if (screenStatus(context, lock = false) == "photos") return false
     val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, ComponentName(context, service))
+        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, ComponentName(context, PhotoWallpaperService::class.java))
     try {
         context.startActivity(intent)
     } catch (e: Exception) {
@@ -496,4 +493,30 @@ fun fitMessage(v: String) = when (v) {
     "fit" -> "Fit: the whole photo is shown"
     "blur" -> "Blur fill: whole photo on a soft background"
     else -> "Fill: photos cover the whole screen"
+}
+
+/** A big, obvious "is it working" banner: green tick or a call to action. */
+@Composable
+fun StatusBanner(ok: Boolean, title: String, detail: String, action: String? = null, onAction: () -> Unit = {}) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (ok) cs.primaryContainer else cs.tertiaryContainer)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (ok) Icons.Rounded.CheckCircle else Icons.Rounded.Info,
+            null,
+            tint = if (ok) cs.primary else cs.tertiary,
+            modifier = Modifier.size(28.dp),
+        )
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = if (ok) cs.onPrimaryContainer else cs.onTertiaryContainer)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = if (ok) cs.onPrimaryContainer else cs.onTertiaryContainer)
+        }
+        if (action != null) PressButton(action, onClick = onAction, style = BtnStyle.Brand, height = 44, modifier = Modifier.width(96.dp))
+    }
 }

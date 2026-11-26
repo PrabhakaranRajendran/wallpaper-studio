@@ -100,7 +100,10 @@ class PhotoRenderer(
     private val camera = Camera()
     private val gyro = GyroTracker(context) { requestFrames() }
 
-    private val changeRunnable = Runnable { if (!paused) advance("timer") else scheduleTimer() }
+    private val changeRunnable = Runnable {
+        paused = Battery.stopAll(context)
+        if (!paused) advance("timer") else scheduleTimer()
+    }
     private val minuteRunnable = object : Runnable {
         override fun run() {
             drawFrame()
@@ -112,9 +115,20 @@ class PhotoRenderer(
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, intent: Intent) {
             when (intent.action) {
+                Intent.ACTION_BATTERY_CHANGED, android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                    val stop = Battery.stopAll(context)
+                    if (stop != paused) {
+                        paused = stop
+                        batteryBlocked = stop
+                        scheduleTimer()
+                        updateGyro()
+                        lastDrawnX = 99f
+                        drawFrame()
+                    }
+                }
                 Intent.ACTION_SCREEN_OFF -> {
                     locked = true
-                    if (Store.lockMode() == "slideshow" && !Store.paused() && LockChanger.isDue()) {
+                    if (Store.lockMode() == "slideshow" && !Battery.stopAll(context) && LockChanger.isDue()) {
                         LockChanger.changeAsync(context, "screen off")
                     }
                 }
@@ -137,6 +151,8 @@ class PhotoRenderer(
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_USER_PRESENT)
+                addAction(Intent.ACTION_BATTERY_CHANGED)
+                addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
             }
             ContextCompat.registerReceiver(context, screenReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
             receiverRegistered = true
@@ -146,7 +162,7 @@ class PhotoRenderer(
 
     fun destroy() {
         Store.prefs.unregisterOnSharedPreferenceChangeListener(this)
-        if (live && reportedFlags != 0) reportScreens(video = false, flags = reportedFlags, running = false)
+        if (live && reportedFlags != 0) reportScreens(flags = reportedFlags, running = false)
         if (receiverRegistered) {
             try {
                 context.unregisterReceiver(screenReceiver)
@@ -185,6 +201,7 @@ class PhotoRenderer(
     fun visibilityChanged(isVisible: Boolean) {
         visible = isVisible
         if (isVisible) {
+            paused = Battery.stopAll(context)
             batteryBlocked = Battery.blocks3d(context)
             if (live) report()
             locked = context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
@@ -196,7 +213,9 @@ class PhotoRenderer(
             drawFrame()
             scheduleMinute()
         } else {
+            // Nothing is on screen: stop every timer so the phone can sleep.
             handler.removeCallbacks(minuteRunnable)
+            handler.removeCallbacks(changeRunnable)
         }
         updateGyro()
     }
@@ -215,7 +234,7 @@ class PhotoRenderer(
         intensity = Store.gyroIntensity()
         smooth = Store.gyroSmooth()
         style = Store.gyroStyle()
-        paused = Store.paused()
+        paused = Battery.stopAll(context)
         widgets = Widgets.load()
         widgetsOn = widgets.any { it.on }
         shadow = Store.bool(Keys.WIDGET_SHADOW, true)
@@ -231,15 +250,16 @@ class PhotoRenderer(
             }
             Keys.CROPS -> refreshCrop()
             Keys.fit(Target.HOME), Keys.WIDGET_SHADOW, Keys.WEATHER_TEXT -> drawFrame()
-            Keys.WIDGETS -> {
+            Keys.widgets(Target.HOME) -> {
                 refreshWidgetData()
                 drawFrame()
                 scheduleMinute()
             }
-            Keys.interval(Target.HOME), Keys.last(Target.HOME), Keys.PAUSED -> scheduleTimer()
+            Keys.interval(Target.HOME), Keys.last(Target.HOME) -> scheduleTimer()
             Keys.change(Target.HOME) -> if (live) advance("Change now")
             Keys.GYRO, Keys.GYRO_INTENSITY, Keys.GYRO_SMOOTH, Keys.GYRO_STYLE,
-            Keys.BAT_3D_SAVER, Keys.BAT_3D_LOW -> {
+            Keys.PAUSED, Keys.BAT_STOP_ON, Keys.BAT_STOP_LEVEL, Keys.BAT_SAVER_STOP -> {
+                scheduleTimer()
                 batteryBlocked = Battery.blocks3d(context)
                 updateGyro()
                 lastDrawnX = 99f
@@ -268,7 +288,7 @@ class PhotoRenderer(
 
     private fun scheduleTimer() {
         handler.removeCallbacks(changeRunnable)
-        if (!live || paused) return
+        if (!live || paused || !visible) return
         val last = Store.long(Keys.last(Target.HOME), 0L)
         val delay = (last + intervalMs() - System.currentTimeMillis()).coerceIn(1_000L, intervalMs())
         handler.postDelayed(changeRunnable, delay)
@@ -544,8 +564,8 @@ class PhotoRenderer(
     private fun report() {
         val f = flags()
         if (f == reportedFlags) return
-        if (reportedFlags != 0) reportScreens(video = false, flags = reportedFlags, running = false)
-        reportScreens(video = false, flags = f, running = true)
+        if (reportedFlags != 0) reportScreens(flags = reportedFlags, running = false)
+        reportScreens(flags = f, running = true)
         reportedFlags = f
     }
 

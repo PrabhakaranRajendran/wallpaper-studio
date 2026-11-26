@@ -2,7 +2,6 @@
 
 A clean Android live-wallpaper app (made for the OnePlus 12, works on Android 10+).
 
-- **Video wallpaper** – upload any video; it is trimmed, cropped to the screen shape, scaled and re-encoded so it plays smoothly and saves battery.
 - **Photo changer** – pick folders, tick the photos you want, and they rotate every 1 min / 15 min / 30 min / 1 hr / 6 hr / daily / custom, or on every unlock. Shuffle or in order; fade, slide or zoom transitions; fill, fit or blur-fill.
 - **Crop & zoom** – per-photo zoom, position, rotate, flip and brightness, shown inside a frame shaped like the phone screen.
 - **3D gyro effect** – tilt the phone and the photo moves with depth (3D tilt, shift or zoom styles).

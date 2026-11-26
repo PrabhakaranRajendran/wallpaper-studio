@@ -20,7 +20,7 @@ class LockWorker(context: Context, params: WorkerParameters) : Worker(context, p
 
     override fun doWork(): Result {
         Store.init(applicationContext)
-        if (Store.lockMode() == "slideshow" && !Store.paused()) {
+        if (Store.lockMode() == "slideshow" && !Battery.stopAll(applicationContext)) {
             val interval = Store.interval(Target.LOCK)
             val due = if (interval <= 0) {
                 // "Every screen off" needs our Home wallpaper; without it, change every 15 min.
