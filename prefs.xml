@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <long name="last_update_check" value="1795729800363" />
+    <long name="lock_last" value="1795729646163" />
+    <int name="home_interval" value="1" />
+    <long name="home_last" value="1795729815768" />
+    <int name="lock_interval" value="0" />
+    <string name="widgets">[{&quot;type&quot;:&quot;clock&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;thin&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.1599999964237213,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;big&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;},{&quot;type&quot;:&quot;date&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;regular&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.27000001072883606,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;short&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;},{&quot;type&quot;:&quot;battery&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;medium&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.9200000166893005,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;},{&quot;type&quot;:&quot;weather&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;regular&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.3100000023841858,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;},{&quot;type&quot;:&quot;text&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;script&quot;,&quot;color&quot;:-1,&quot;size&quot;:1.2000000476837158,&quot;y&quot;:0.800000011920929,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;Wallpaper Studio&quot;},{&quot;type&quot;:&quot;event&quot;,&quot;on&quot;:false,&quot;font&quot;:&quot;regular&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.3499999940395355,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;}]</string>
+    <boolean name="active_photo_lock" value="true" />
+    <int name="lock_index" value="1" />
+    <string name="home_hidden">[]</string>
+    <string name="weather_text">28° Partly cloudy · Chennai</string>
+    <string name="widgets_lock">[{&quot;type&quot;:&quot;date&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;regular&quot;,&quot;color&quot;:-1,&quot;size&quot;:1,&quot;y&quot;:0.6000000238418579,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;long&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;&quot;},{&quot;type&quot;:&quot;text&quot;,&quot;on&quot;:true,&quot;font&quot;:&quot;script&quot;,&quot;color&quot;:-1,&quot;size&quot;:1.2000000476837158,&quot;y&quot;:0.7200000286102295,&quot;align&quot;:&quot;center&quot;,&quot;style&quot;:&quot;&quot;,&quot;h24&quot;:false,&quot;text&quot;:&quot;Lock text&quot;}]</string>
+    <boolean name="migrated_v2" value="true" />
+    <string name="lock_hidden">[&quot;\/storage\/emulated\/0\/Android\/media\/com.prabhu.wallpaperstudio\/Lock screen\/Lock 1.jpg&quot;,&quot;\/storage\/emulated\/0\/Android\/media\/com.prabhu.wallpaperstudio\/Lock screen\/Lock 2.jpg&quot;,&quot;\/storage\/emulated\/0\/Android\/media\/com.prabhu.wallpaperstudio\/Lock screen\/Lock 3.jpg&quot;]</string>
+    <string name="lock_mode">slideshow</string>
+    <boolean name="active_photo_home" value="true" />
+    <string name="palette">aqua</string>
+    <string name="theme">light</string>
+    <string name="lock_last_photo">/storage/emulated/0/Android/media/com.prabhu.wallpaperstudio/Lock screen/Lock 2.jpg</string>
+    <int name="home_index" value="3" />
+    <string name="engine_log">21:47  Lock screen: photo 2 of 3 (timer)&#10;21:50  Home: photo 4 of 4&#10;21:50  Lock screen: no photos to show&#10;21:50  Lock screen: no photos to show</string>
+</map>
