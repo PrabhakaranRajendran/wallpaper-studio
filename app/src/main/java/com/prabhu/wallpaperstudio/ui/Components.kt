@@ -483,3 +483,17 @@ fun applyWallpaper(context: Context, video: Boolean): Boolean {
     }
     return true
 }
+
+fun fitLabel(v: String) = when (v) {
+    "smart" -> "Smart"
+    "fit" -> "Fit"
+    "blur" -> "Blur fill"
+    else -> "Fill"
+}
+
+fun fitMessage(v: String) = when (v) {
+    "smart" -> "Smart fit: tall photos fill the screen, wide ones are shown whole"
+    "fit" -> "Fit: the whole photo is shown"
+    "blur" -> "Blur fill: whole photo on a soft background"
+    else -> "Fill: photos cover the whole screen"
+}

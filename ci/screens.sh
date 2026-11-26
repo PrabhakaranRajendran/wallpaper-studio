@@ -71,6 +71,10 @@ adb emu sensor set gyroscope 0.8:1.6:0
 sleep 0.4
 adb emu sensor set gyroscope 0:0:0
 shot 20b_render_photo_tilted 0.3
+start --es only wide --es tab home > /dev/null
+adb shell am start -S -W -n "$PKG/.debug.RenderTestActivity" --es kind photo > /dev/null
+shot 20c_render_wide_photo_smart 5
+start --es only "" --es tab home > /dev/null
 start --es video "$VID_ROT" --es tab wallpaper --ei sub 1
 shot 21_wallpaper_video_tab 5
 adb shell am start -S -W -n "$PKG/.debug.RenderTestActivity" --es kind video > /dev/null

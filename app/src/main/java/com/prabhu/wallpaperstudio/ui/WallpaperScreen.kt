@@ -167,7 +167,7 @@ fun WallpaperScreen(subTab: Int, onSubTab: (Int) -> Unit, onCrop: (key: String, 
             containerColor = Color.Transparent,
             modifier = Modifier.padding(top = 12.dp),
         ) {
-            listOf("Photos", "Video", "3D effect", "Clock & widgets").forEachIndexed { i, t ->
+            listOf("Photos", "Video", "3D effect", "Widgets").forEachIndexed { i, t ->
                 Tab(selected = subTab == i, onClick = { onSubTab(i) }, text = { Text(t) })
             }
         }
@@ -224,8 +224,8 @@ private fun HomePhotos(onCrop: (String) -> Unit) {
             ChoiceRow("Transition", listOf("fade" to "Fade", "slide" to "Slide", "zoom" to "Zoom", "none" to "None"), Store.transition()) { v ->
                 save("Transition: $v") { Store.edit { putString(Keys.HOME_TRANSITION, v) } }
             }
-            ChoiceRow("Fit", listOf("fill" to "Fill", "fit" to "Fit", "blur" to "Blur fill"), Store.fit(Target.HOME)) { v ->
-                save("Fit: ${if (v == "blur") "blur fill" else v}") { Store.edit { putString(Keys.fit(Target.HOME), v) } }
+            ChoiceRow("Fit", listOf("smart" to "Smart", "fill" to "Fill", "fit" to "Fit", "blur" to "Blur"), Store.fit(Target.HOME)) { v ->
+                save(fitMessage(v)) { Store.edit { putString(Keys.fit(Target.HOME), v) } }
             }
         }
     }

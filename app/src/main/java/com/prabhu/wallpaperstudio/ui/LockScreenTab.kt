@@ -102,7 +102,7 @@ fun LockScreenTab(onCrop: (String) -> Unit) {
                 val count = remember(Store.tick.intValue) { PhotoLists.get(context, Target.LOCK).size }
                 SummaryLine("Photos", "$count")
                 SummaryLine("Changes", if (Store.interval(Target.LOCK) <= 0) "every time you lock" else "every ${intervalLabel(Store.interval(Target.LOCK))}")
-                SummaryLine("Order · fit", "${if (Store.order(Target.LOCK) == "shuffle") "Shuffle" else "In order"} · ${Store.fit(Target.LOCK).replaceFirstChar { it.uppercase() }}")
+                SummaryLine("Order · fit", "${if (Store.order(Target.LOCK) == "shuffle") "Shuffle" else "In order"} · ${fitLabel(Store.fit(Target.LOCK))}")
                 SummaryLine("Last changed", if (last == 0L) "never" else SimpleDateFormat("d MMM, h:mm a", Locale.getDefault()).format(Date(last)))
                 PressButton(
                     "Set lock screen now",
@@ -146,8 +146,8 @@ fun LockScreenTab(onCrop: (String) -> Unit) {
                 ChoiceRow("Order", listOf("shuffle" to "Shuffle", "sequence" to "In order"), Store.order(Target.LOCK)) { v ->
                     save("Order: ${if (v == "shuffle") "shuffle" else "in order"}") { Store.edit { putString(Keys.order(Target.LOCK), v) } }
                 }
-                ChoiceRow("Fit", listOf("fill" to "Fill", "fit" to "Fit", "blur" to "Blur fill"), Store.fit(Target.LOCK)) { v ->
-                    save("Fit: ${if (v == "blur") "blur fill" else v}") { Store.edit { putString(Keys.fit(Target.LOCK), v) } }
+                ChoiceRow("Fit", listOf("smart" to "Smart", "fill" to "Fill", "fit" to "Fit", "blur" to "Blur"), Store.fit(Target.LOCK)) { v ->
+                    save(fitMessage(v)) { Store.edit { putString(Keys.fit(Target.LOCK), v) } }
                 }
             }
             Text(

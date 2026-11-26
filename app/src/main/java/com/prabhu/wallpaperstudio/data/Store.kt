@@ -183,7 +183,7 @@ object Store {
     // ---- defaults in one place ----
     fun interval(t: String) = int(Keys.interval(t), if (t == Target.LOCK) 0 else 30)
     fun order(t: String) = string(Keys.order(t), "shuffle")
-    fun fit(t: String) = string(Keys.fit(t), "fill")
+    fun fit(t: String) = string(Keys.fit(t), "smart")
     fun homeSource() = string(Keys.HOME_SOURCE, "photos")
     fun transition() = string(Keys.HOME_TRANSITION, "fade")
     fun lockMode() = string(Keys.LOCK_MODE, "off")

@@ -94,7 +94,7 @@ object LockChanger {
         canvas.drawColor(Color.BLACK)
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
         val crop = Store.crops()[photo]
-        val fit = if (crop != null) "fill" else Store.fit(Target.LOCK)
+        val fit = if (crop != null) "fill" else PhotoMath.resolveFit(Store.fit(Target.LOCK), src.width, src.height, w.toFloat(), h.toFloat())
         val m = Matrix()
         if (fit == "blur") {
             val small = Bitmap.createScaledBitmap(src, max(1, src.width / 24), max(1, src.height / 24), true)

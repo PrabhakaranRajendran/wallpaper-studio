@@ -13,6 +13,17 @@ import kotlin.math.max
 import kotlin.math.min
 
 object PhotoMath {
+    /**
+     * "smart": photos shaped like the screen fill it; photos much wider than the
+     * screen are shown whole on a blurred copy of themselves, so nothing important is cut off.
+     */
+    fun resolveFit(fit: String, bw: Int, bh: Int, sw: Float, sh: Float): String {
+        if (fit != "smart") return fit
+        val photo = bw.toFloat() / bh.coerceAtLeast(1)
+        val screen = sw / sh.coerceAtLeast(1f)
+        return if (photo > screen * 1.6f) "blur" else "fill"
+    }
+
 
     /**
      * Places a bitmap on a screen of size sw x sh.

@@ -515,7 +515,7 @@ class PhotoRenderer(
 
         paint.alpha = alpha
         paint.colorFilter = s.filter
-        val effectiveFit = if (s.crop != null) "fill" else fit
+        val effectiveFit = if (s.crop != null) "fill" else PhotoMath.resolveFit(fit, s.bitmap.width, s.bitmap.height, w, h)
         if (effectiveFit == "blur") {
             PhotoMath.place(matrix, s.blur.width, s.blur.height, w, h, null, "fill", scale * 1.05f, px * 0.6f, py * 0.6f)
             applyTilt(nx, ny, inten, w, h)

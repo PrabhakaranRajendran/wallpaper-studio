@@ -2,10 +2,11 @@ package com.prabhu.wallpaperstudio
 
 import android.content.Context
 import android.content.Intent
+import com.prabhu.wallpaperstudio.data.Albums
 import com.prabhu.wallpaperstudio.data.Keys
 import com.prabhu.wallpaperstudio.data.PhotoLists
-import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.data.Target
+import com.prabhu.wallpaperstudio.data.Store
 import com.prabhu.wallpaperstudio.data.Widgets
 import com.prabhu.wallpaperstudio.render.LockChanger
 
@@ -50,6 +51,13 @@ object DebugSetup {
         intent.getStringExtra("palette")?.let { p -> Store.edit { putString(Keys.PALETTE, p) } }
         intent.getStringExtra("mode")?.let { m -> Store.edit { putString(Keys.THEME, m) } }
         intent.getStringExtra("gyro")?.let { g -> Store.edit { putBoolean(Keys.GYRO, g == "on") } }
+        intent.getStringExtra("only")?.let { part ->
+            // Show only the Home photos whose name contains [part] ("" shows all).
+            Albums.allPhotos(context, Target.HOME).forEach { ph ->
+                Albums.setHidden(Target.HOME, ph, part.isNotEmpty() && !ph.contains(part))
+            }
+            PhotoLists.invalidate()
+        }
         if (intent.getBooleanExtra("lock_now", false)) LockChanger.changeAsync(context, "test")
     }
 
