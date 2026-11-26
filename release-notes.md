@@ -1,10 +1,11 @@
-Wallpaper Studio 2.0
+Wallpaper Studio 2.1
 
-- New tabs: Wallpaper (Home screen) and Lock screen, each with its own photos and settings
-- Lock screen slideshow that works on OnePlus: a new photo every time you lock, or on a timer
-- Add photos from Gallery / Google Photos straight into the Home or Lock album (no folder permissions needed)
-- Smart fit: tall photos fill the screen, wide photos are shown whole on a soft blurred background
-- Video fixed: portrait and landscape videos stand upright, Fill / Fit, Crop & zoom, 3D effect on video too
-- Clock & widgets on the Home screen: clock, date, battery, weather, your own text, next calendar event – each with font, colour, size and position, with a live preview
-- 10 themes plus Material You, Light / Dark, 3D buttons and vibration on tap
-- A pop-up confirms every change; clear "what you've chosen" summaries on each tab
+- New Status tab: one clear screen with a Pause everything button and a card each for your Home screen and lock screen
+- Settings: Pause everything, stop automatically when the battery is low (you choose 10-40%), stop in Battery Saver. Nothing runs while the phone is locked or an app covers the wallpaper
+- Lock screen: your own text and date, with position, font, colour and size, drawn onto the lock picture, with a live preview
+- Select several photos at once (button or hold a photo) to hide, show or remove them in one tap
+- Simpler Lock tab: one switch, then Photos and Text & date
+- Video wallpaper removed, so the app is smaller and uses less battery
+- Bottom bar names fixed (Status, Home, Lock, Themes, Settings)
+
+If your Home screen was set to Wallpaper Studio video, open the Home tab and press Apply again to use photos.

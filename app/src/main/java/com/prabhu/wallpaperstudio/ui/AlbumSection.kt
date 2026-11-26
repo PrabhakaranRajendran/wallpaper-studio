@@ -217,7 +217,7 @@ fun AlbumSection(target: String, onCrop: (String) -> Unit) {
                     }, icon = Icons.Rounded.Visibility, style = BtnStyle.Tonal, height = 44, modifier = Modifier.weight(1f))
                     PressButton("Remove", onClick = {
                         if (selected.isEmpty()) snack("Select photos first") else confirmRemoveMany = true
-                    }, icon = Icons.Rounded.Delete, style = BtnStyle.Outline, height = 44, modifier = Modifier.weight(1f))
+                    }, style = BtnStyle.Outline, height = 44, modifier = Modifier.weight(1f))
                 }
             }
         }
