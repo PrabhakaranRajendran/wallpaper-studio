@@ -22,6 +22,9 @@ adb wait-for-device
 adb shell input keyevent 82
 adb shell svc power stayon true
 adb install -r -g "$APK" || { echo "install failed"; exit 0; }
+adb shell settings put global hide_error_dialogs 1
+adb shell settings put global anr_show_background 0
+adb shell input keyevent KEYCODE_HOME; sleep 5
 adb logcat -c
 
 # ---- test video: landscape pixels with a 90° rotation note (like phone portrait videos after optimizing)
