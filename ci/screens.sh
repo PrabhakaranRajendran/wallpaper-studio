@@ -7,11 +7,18 @@ OUT=shots
 mkdir -p "$OUT"
 APK=app/build/outputs/apk/debug/app-debug.apk
 
-shot() { sleep "${2:-3}"; adb exec-out screencap -p > "$OUT/$1.png"; }
-start() { adb shell am start -S -W -n "$PKG/.MainActivity" "$@" > /dev/null; }
+# The emulator's own launcher sometimes freezes; close its "isn't responding" box (Back = Wait).
+no_anr() {
+  if timeout 10 adb shell dumpsys window | grep -q "mCurrentFocus.*Application Not Responding"; then
+    echo "closing a not-responding box"; adb shell input keyevent KEYCODE_BACK; sleep 1
+  fi
+}
+shot() { sleep "${2:-3}"; no_anr; adb exec-out screencap -p > "$OUT/$1.png"; }
+start() { no_anr; timeout 40 adb shell am start -S -W -n "$PKG/.MainActivity" "$@" > /dev/null; }
 swipe_up() { adb shell input swipe 540 1900 540 700 400; }
 tap_text() { # tap the first on-screen element whose text matches $1
-  adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  no_anr
+  timeout 30 adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
   adb pull /sdcard/ui.xml "$OUT/ui_$2.xml" > /dev/null 2>&1
   local xy
   xy=$(python3 ci/tap_text.py "$OUT/ui_$2.xml" "$1")
@@ -22,8 +29,6 @@ adb wait-for-device
 adb shell input keyevent 82
 adb shell svc power stayon true
 adb install -r -g "$APK" || { echo "install failed"; exit 0; }
-adb shell settings put global hide_error_dialogs 1
-adb shell settings put global anr_show_background 0
 adb shell input keyevent KEYCODE_HOME; sleep 5
 adb logcat -c
 
