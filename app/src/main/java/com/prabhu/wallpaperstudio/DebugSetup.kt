@@ -52,9 +52,9 @@ object DebugSetup {
         intent.getStringExtra("mode")?.let { m -> Store.edit { putString(Keys.THEME, m) } }
         intent.getStringExtra("gyro")?.let { g -> Store.edit { putBoolean(Keys.GYRO, g == "on") } }
         intent.getStringExtra("only")?.let { part ->
-            // Show only the Home photos whose name contains [part] ("" shows all).
+            // Show only the Home photos whose name contains [part] ("all" shows all).
             Albums.allPhotos(context, Target.HOME).forEach { ph ->
-                Albums.setHidden(Target.HOME, ph, part.isNotEmpty() && !ph.contains(part))
+                Albums.setHidden(Target.HOME, ph, part != "all" && !ph.contains(part))
             }
             PhotoLists.invalidate()
         }

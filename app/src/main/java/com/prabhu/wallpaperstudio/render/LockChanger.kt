@@ -97,7 +97,7 @@ object LockChanger {
         val fit = if (crop != null) "fill" else PhotoMath.resolveFit(Store.fit(Target.LOCK), src.width, src.height, w.toFloat(), h.toFloat())
         val m = Matrix()
         if (fit == "blur") {
-            val small = Bitmap.createScaledBitmap(src, max(1, src.width / 24), max(1, src.height / 24), true)
+            val small = PhotoMath.softBlur(src)
             PhotoMath.place(m, small.width, small.height, w.toFloat(), h.toFloat(), null, "fill", 1.05f)
             canvas.drawBitmap(small, m, paint)
             small.recycle()

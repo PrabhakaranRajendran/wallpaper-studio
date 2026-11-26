@@ -17,6 +17,51 @@ object PhotoMath {
      * "smart": photos shaped like the screen fill it; photos much wider than the
      * screen are shown whole on a blurred copy of themselves, so nothing important is cut off.
      */
+    /** A small, smooth, slightly dimmed copy of a photo, used behind "Blur fill". */
+    fun softBlur(src: android.graphics.Bitmap): android.graphics.Bitmap {
+        val k = 48f / maxOf(src.width, src.height)
+        val w = maxOf(2, (src.width * k).toInt())
+        val h = maxOf(2, (src.height * k).toInt())
+        val soft = if (src.config == android.graphics.Bitmap.Config.HARDWARE) src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else src
+        val small = android.graphics.Bitmap.createScaledBitmap(soft, w, h, true)
+        if (soft !== src && soft !== small) soft.recycle()
+        val px = IntArray(w * h)
+        small.getPixels(px, 0, w, 0, 0, w, h)
+        val tmp = IntArray(w * h)
+        repeat(3) {
+            boxPass(px, tmp, w, h, 2, horizontal = true)
+            boxPass(tmp, px, w, h, 2, horizontal = false)
+        }
+        for (i in px.indices) {
+            val c = px[i]
+            val r = ((c shr 16) and 255) * 4 / 5
+            val g = ((c shr 8) and 255) * 4 / 5
+            val b = (c and 255) * 4 / 5
+            px[i] = (255 shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val out = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        out.setPixels(px, 0, w, 0, 0, w, h)
+        if (small !== src) small.recycle()
+        return out
+    }
+
+    private fun boxPass(src: IntArray, dst: IntArray, w: Int, h: Int, r: Int, horizontal: Boolean) {
+        val lines = if (horizontal) h else w
+        val len = if (horizontal) w else h
+        for (line in 0 until lines) {
+            for (i in 0 until len) {
+                var sr = 0; var sg = 0; var sb = 0; var n = 0
+                for (d in -r..r) {
+                    val j = (i + d).coerceIn(0, len - 1)
+                    val c = if (horizontal) src[line * w + j] else src[j * w + line]
+                    sr += (c shr 16) and 255; sg += (c shr 8) and 255; sb += c and 255; n++
+                }
+                val idx = if (horizontal) line * w + i else i * w + line
+                dst[idx] = (255 shl 24) or ((sr / n) shl 16) or ((sg / n) shl 8) or (sb / n)
+            }
+        }
+    }
+
     fun resolveFit(fit: String, bw: Int, bh: Int, sw: Float, sh: Float): String {
         if (fit != "smart") return fit
         val photo = bw.toFloat() / bh.coerceAtLeast(1)

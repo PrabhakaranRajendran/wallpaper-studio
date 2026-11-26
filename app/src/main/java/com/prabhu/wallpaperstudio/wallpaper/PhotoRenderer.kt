@@ -334,7 +334,7 @@ class PhotoRenderer(
             var reason: String? = null
             val slide = try {
                 val bmp = PhotoMath.decode(context, uri, longSide)
-                val blur = Bitmap.createScaledBitmap(bmp, max(1, bmp.width / 24), max(1, bmp.height / 24), true)
+                val blur = PhotoMath.softBlur(bmp)
                 Slide(uri, bmp, blur, crop, PhotoMath.brightnessFilter(crop?.brightness ?: 0f))
             } catch (t: Throwable) {
                 reason = if (t is SecurityException) "no permission" else (t.message ?: t.javaClass.simpleName)
